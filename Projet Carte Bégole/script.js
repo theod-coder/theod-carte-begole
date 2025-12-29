@@ -23,7 +23,7 @@ var baseMaps = {
 };
 L.control.layers(baseMaps, null, { position: 'bottomright' }).addTo(map);
 
-// --- FRONTIÈRES ---
+// --- FRONTIÈRES BÉGOLE ---
 fetch('village.json')
     .then(r => r.json())
     .then(data => {
@@ -31,41 +31,216 @@ fetch('village.json')
             style: { color: '#ff3333', weight: 3, opacity: 0.8, fillOpacity: 0.1 }
         }).addTo(map);
     })
-    .catch(e => console.log("Frontières non chargées"));
+    .catch(e => console.log("Frontières non chargées (fichier village.json manquant ?)"));
 
-// --- DONNÉES & CLUSTER ---
+// --- VARIABLES GLOBALES DONNÉES ---
 var savedPoints = [];
-
-// CHANGEMENT ICI : On utilise markerClusterGroup au lieu de layerGroup
-var markersLayer = L.markerClusterGroup({
-    showCoverageOnHover: false, // N'affiche pas le polygone bleu au survol (plus propre)
-    maxClusterRadius: 50        // Rayon de regroupement (plus petit = plus précis)
-});
-map.addLayer(markersLayer);
+var markersLayer = L.layerGroup().addTo(map); // Pour les champignons
+var tracksLayer = L.layerGroup().addTo(map);  // Pour les tracés GPS
 
 var currentFilterEmoji = null; 
 var currentFilterText = null;
-
-loadFromLocalStorage();
-
 var tempLatLng = null;
+
+// --- VARIABLES TRACKING (ARIANE) ---
+let isTracking = false;
+let trackWatchId = null;
+let currentPath = [];
+let currentPolyline = null;
+let wakeLock = null;
+let savedTrips = JSON.parse(localStorage.getItem('begole_gps_trips')) || [];
+
+// Chargement initial
+loadFromLocalStorage();
 
 map.on('click', function(e) {
     tempLatLng = e.latlng;
-    openModal();
+    openModal(); // Ouvre la modale d'ajout de point
 });
 
 // --- MENU ---
 function toggleMenu() {
     var menu = document.getElementById('menu-items');
-    if (menu.classList.contains('hidden-mobile')) {
-        menu.classList.remove('hidden-mobile');
+    menu.classList.toggle('hidden-mobile');
+}
+
+// ============================================================
+// --- 1. LOGIQUE WAKE LOCK (GARDER ECRAN ALLUMÉ) ---
+// ============================================================
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            document.getElementById('wake-status').textContent = "🔆 Écran maintenu actif";
+        }
+    } catch (err) {
+        console.log("Wake Lock erreur:", err);
+    }
+}
+async function releaseWakeLock() {
+    if (wakeLock !== null) {
+        await wakeLock.release();
+        wakeLock = null;
+        document.getElementById('wake-status').textContent = "";
+    }
+}
+// Réactiver le WakeLock si on revient sur l'onglet
+document.addEventListener('visibilitychange', async () => {
+    if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+    }
+});
+
+// ============================================================
+// --- 2. LOGIQUE TRACEUR GPS (ARIANE) ---
+// ============================================================
+async function toggleTracking() {
+    const btn = document.getElementById('btn-tracking');
+    const indicator = document.getElementById('recording-indicator');
+
+    if (!isTracking) {
+        // Démarrage
+        isTracking = true;
+        currentPath = [];
+        
+        btn.innerHTML = "⏹️ Arrêter Enregistrement";
+        btn.className = "btn-stop-track"; // Change en rouge
+        indicator.classList.remove('hidden');
+        
+        // Active le Wake Lock
+        await requestWakeLock();
+
+        // Création ligne rouge pour trajet en cours
+        currentPolyline = L.polyline([], {color: 'red', weight: 5}).addTo(map);
+
+        if (navigator.geolocation) {
+            trackWatchId = navigator.geolocation.watchPosition(
+                updateTrackingPosition, 
+                (err) => alert("Erreur GPS Traceur"), 
+                { enableHighAccuracy: true }
+            );
+        }
+        toggleMenu(); // Fermer le menu pour voir la carte
     } else {
-        menu.classList.add('hidden-mobile');
+        // Arrêt
+        isTracking = false;
+        navigator.geolocation.clearWatch(trackWatchId);
+        
+        // Désactive Wake Lock
+        await releaseWakeLock();
+
+        btn.innerHTML = "▶️ Démarrer Trajet";
+        btn.className = "btn-start-track"; // Revient en vert
+        indicator.classList.add('hidden');
+
+        // Sauvegarde
+        if (currentPath.length > 0) {
+            saveTrip(currentPath);
+            alert("Trajet sauvegardé dans l'historique !");
+        }
+        
+        // Nettoyage visuel immédiat (on pourra le revoir dans l'historique)
+        if (currentPolyline) map.removeLayer(currentPolyline);
     }
 }
 
-// --- LOGIQUE FILTRES ---
+function updateTrackingPosition(position) {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const newLatLng = [lat, lng];
+
+    // Mise à jour visuelle du marqueur utilisateur
+    updateUserMarker(lat, lng, position.coords.accuracy);
+
+    // Ajout au tracé
+    currentPath.push(newLatLng);
+    currentPolyline.setLatLngs(currentPath);
+    map.setView(newLatLng); // Centrer auto
+}
+
+function saveTrip(path) {
+    const trip = {
+        id: Date.now(),
+        date: new Date().toISOString(),
+        points: path
+    };
+    savedTrips.push(trip);
+    localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
+}
+
+// --- HISTORIQUE DES TRAJETS ---
+function openHistory() {
+    renderHistoryList();
+    document.getElementById('history-overlay').classList.remove('hidden');
+    toggleMenu();
+}
+function closeHistory() {
+    document.getElementById('history-overlay').classList.add('hidden');
+}
+
+function renderHistoryList() {
+    const container = document.getElementById('tripList');
+    container.innerHTML = '';
+    
+    // Tri par date décroissante
+    const sorted = savedTrips.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    if(sorted.length === 0) {
+        container.innerHTML = '<div style="padding:10px; color:#999;">Aucun trajet enregistré.</div>';
+        return;
+    }
+
+    sorted.forEach((trip, index) => {
+        const d = new Date(trip.date);
+        const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        const div = document.createElement('div');
+        div.className = 'trip-item';
+        div.innerHTML = `
+            <div>
+                <span class="trip-date">${dateStr}</span>
+                <span class="trip-info">${trip.points.length} points GPS</span>
+            </div>
+            <div style="font-size:20px;">👁️</div>
+        `;
+        div.onclick = () => {
+            showSingleTrip(trip);
+            closeHistory();
+        };
+        container.appendChild(div);
+    });
+}
+
+function clearMapLayers() {
+    tracksLayer.clearLayers();
+}
+
+function showSingleTrip(trip) {
+    clearMapLayers(); // Efface les autres tracés
+    // Affiche le tracé en bleu
+    const poly = L.polyline(trip.points, {color: '#3498db', weight: 5}).addTo(tracksLayer);
+    map.fitBounds(poly.getBounds());
+}
+
+function showAllTrips() {
+    clearMapLayers();
+    const allPoints = [];
+    savedTrips.forEach(trip => {
+        const poly = L.polyline(trip.points, {color: '#9b59b6', weight: 3, opacity: 0.7}).addTo(tracksLayer);
+        allPoints.push(...trip.points);
+    });
+    
+    if (allPoints.length > 0) {
+        map.fitBounds(L.polyline(allPoints).getBounds());
+    }
+    closeHistory();
+}
+
+// ============================================================
+// --- 3. LOGIQUE EXISTANTE (POINTS, FILTRES, ETC.) ---
+// ============================================================
+
+// --- FILTRES ---
 function applyFilter() {
     var inputVal = document.getElementById('filter-input').value.trim();
     if (inputVal) {
@@ -88,19 +263,17 @@ function resetFilter() {
     toggleMenu();
 }
 
-// --- STATISTIQUES (NOUVEAU) ---
+// --- STATS ---
 function showStats() {
-    // 1. Calcul des stats
     var stats = {};
     savedPoints.forEach(p => {
         var emoji = p.emoji || "❓";
-        if (stats[emoji]) { stats[emoji]++; } else { stats[emoji] = 1; }
+        stats[emoji] = (stats[emoji] || 0) + 1;
     });
 
-    // 2. Génération HTML
     var htmlContent = "";
     if (Object.keys(stats).length === 0) {
-        htmlContent = "<p>Aucun point enregistré pour le moment.</p>";
+        htmlContent = "<p>Aucun point enregistré.</p>";
     } else {
         for (var key in stats) {
             htmlContent += `
@@ -109,24 +282,19 @@ function showStats() {
                     <span class="stat-count">${stats[key]} points</span>
                 </div>`;
         }
-        // Total
         htmlContent += `<div style="margin-top:15px; font-weight:bold; border-top:2px solid #333; padding-top:10px;">
             Total : ${savedPoints.length} points
         </div>`;
     }
-
-    // 3. Affichage
     document.getElementById('stats-content').innerHTML = htmlContent;
     document.getElementById('stats-overlay').classList.remove('hidden');
     toggleMenu();
 }
-
 function closeStats() {
     document.getElementById('stats-overlay').classList.add('hidden');
 }
 
-
-// --- GPS ---
+// --- VISUALISATION SIMPLE GPS (SANS ENREGISTREMENT) ---
 var userMarker = null; var userAccuracyCircle = null; var watchId = null;
 
 function toggleLocation() {
@@ -135,26 +303,34 @@ function toggleLocation() {
         navigator.geolocation.clearWatch(watchId); watchId = null;
         if (userMarker) map.removeLayer(userMarker);
         if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
-        btn.innerHTML = "📍 Activer GPS"; btn.style.backgroundColor = "#9b59b6";
+        userMarker = null; 
+        btn.innerHTML = "📍 Juste ma position"; btn.style.backgroundColor = "#9b59b6";
         toggleMenu(); 
     } else {
         if (!navigator.geolocation) { alert("Pas de GPS"); return; }
-        btn.innerHTML = "🛑 Arrêter GPS"; btn.style.backgroundColor = "#7f8c8d";
+        btn.innerHTML = "🛑 Cacher position"; btn.style.backgroundColor = "#7f8c8d";
         watchId = navigator.geolocation.watchPosition(
             (position) => {
-                const lat = position.coords.latitude; const lng = position.coords.longitude; const accuracy = position.coords.accuracy;
-                if (!userMarker) {
-                    var pulsingIcon = L.divIcon({ className: 'user-location-dot', iconSize: [20, 20] });
-                    userMarker = L.marker([lat, lng], {icon: pulsingIcon}).addTo(map);
-                    userAccuracyCircle = L.circle([lat, lng], {radius: accuracy, color: '#3498db', fillOpacity: 0.15}).addTo(map);
-                    map.setView([lat, lng], 16); toggleMenu();
-                } else {
-                    userMarker.setLatLng([lat, lng]); userAccuracyCircle.setLatLng([lat, lng]); userAccuracyCircle.setRadius(accuracy);
-                }
+                updateUserMarker(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
+                map.setView([position.coords.latitude, position.coords.longitude], 16);
             },
             (error) => { alert("Erreur GPS"); toggleLocation(); },
-            { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 }
+            { enableHighAccuracy: true }
         );
+        toggleMenu();
+    }
+}
+
+// Fonction partagée pour mettre à jour le point bleu
+function updateUserMarker(lat, lng, accuracy) {
+    if (!userMarker) {
+        var pulsingIcon = L.divIcon({ className: 'user-location-dot', iconSize: [20, 20] });
+        userMarker = L.marker([lat, lng], {icon: pulsingIcon}).addTo(map);
+        userAccuracyCircle = L.circle([lat, lng], {radius: accuracy, color: '#3498db', fillOpacity: 0.15}).addTo(map);
+    } else {
+        userMarker.setLatLng([lat, lng]);
+        userAccuracyCircle.setLatLng([lat, lng]);
+        userAccuracyCircle.setRadius(accuracy);
     }
 }
 
@@ -162,7 +338,7 @@ function toggleLocation() {
 function openModal() {
     document.getElementById('modal-overlay').classList.remove('hidden');
     var emojiInput = document.getElementById('input-emoji');
-    emojiInput.value = "📍"; emojiInput.focus(); emojiInput.select();
+    emojiInput.value = "📍"; emojiInput.focus();
 }
 function closeModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
@@ -177,7 +353,7 @@ function confirmAddPoint() {
     } else { alert("Description manquante !"); }
 }
 
-// --- CRUD ---
+// --- CRUD POINTS ---
 function deletePoint(index) {
     if (confirm("Supprimer ce point ?")) {
         savedPoints.splice(index, 1); 
@@ -196,17 +372,11 @@ function createMarker(lat, lng, note, emoji, date, index) {
     var customIcon = L.divIcon({
         className: 'emoji-icon', html: emoji, iconSize: [34, 34], iconAnchor: [17, 17]
     });
-    var marker = L.marker([lat, lng], { icon: customIcon, draggable: true });
-
-    marker.on('dragend', function(event) {
-        var newPos = event.target.getLatLng();
-        savedPoints[index].lat = newPos.lat;
-        savedPoints[index].lng = newPos.lng;
-        saveToLocalStorage();
-    });
+    
+    var marker = L.marker([lat, lng], { icon: customIcon });
 
     var dateDisplay = date ? `<div style="color:#888; font-size:11px; margin-top:4px;">📅 ${date}</div>` : "";
-    var googleMapsLink = `http://googleusercontent.com/maps.google.com/maps?q=${lat},${lng}`; // Corrigé format URL
+    var googleMapsLink = `http://googleusercontent.com/maps.google.com/maps?q=${lat},${lng}`;
 
     var popupContent = `
         <div style="text-align:center; min-width: 140px;">
@@ -219,11 +389,10 @@ function createMarker(lat, lng, note, emoji, date, index) {
             <div style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
                 <button onclick="deletePoint(${index})" class="btn-popup-delete">🗑️ Supprimer</button>
             </div>
-            <div style="font-size:10px; color:#aaa; margin-top:5px;">(Maintenez pour déplacer)</div>
         </div>
     `;
     marker.bindPopup(popupContent);
-    markersLayer.addLayer(marker); // On ajoute au cluster, pas directement à la carte
+    marker.addTo(markersLayer);
 }
 
 function saveToLocalStorage() { localStorage.setItem('myMapPoints', JSON.stringify(savedPoints)); }
@@ -240,24 +409,96 @@ function refreshMap() {
     });
 }
 function clearData() {
-    if(confirm("Tout effacer ?")) {
-        savedPoints = []; saveToLocalStorage(); refreshMap(); toggleMenu();
+    if(confirm("Tout effacer ? (Points et Trajets)")) {
+        savedPoints = []; 
+        savedTrips = [];
+        localStorage.removeItem('begole_gps_trips');
+        saveToLocalStorage(); 
+        refreshMap(); 
+        toggleMenu();
     }
 }
+// --- SAUVEGARDE ET CHARGEMENT (Modifié pour inclure les trajets) ---
+
 function exportData() {
-    const dataStr = JSON.stringify(savedPoints, null, 2);
+    // On crée un objet complet avec les deux listes
+    const backupData = {
+        points: savedPoints,
+        trips: savedTrips
+    };
+    
+    const dataStr = JSON.stringify(backupData, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url;
-    a.download = `carte-begole-${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); toggleMenu();
+    
+    const a = document.createElement('a'); 
+    a.href = url;
+    a.download = `backup-begole-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); 
+    a.click(); 
+    document.body.removeChild(a); 
+    toggleMenu();
 }
+
 function importData(input) {
-    const file = input.files[0]; if (!file) return;
+    const file = input.files[0]; 
+    if (!file) return;
+    
     const reader = new FileReader();
     reader.onload = function(e) {
-        try { savedPoints = JSON.parse(e.target.result); saveToLocalStorage(); refreshMap(); alert("Points importés !"); } 
-        catch (err) { alert("Erreur fichier"); }
+        try { 
+            const data = JSON.parse(e.target.result);
+            
+            // Gestion de la compatibilité (si c'est un ancien fichier avec juste des points)
+            if (Array.isArray(data)) {
+                // Ancien format : c'est juste une liste de points
+                savedPoints = data;
+                // On ne touche pas aux trajets existants dans ce cas, ou on peut avertir
+                alert("Ancien format détecté : Seuls les points ont été importés.");
+            } else {
+                // Nouveau format : objet { points: [], trips: [] }
+                if (data.points) savedPoints = data.points;
+                if (data.trips) savedTrips = data.trips;
+                
+                // Sauvegarde immédiate dans le stockage du téléphone
+                localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
+                alert(`Import réussi !\n${savedPoints.length} points\n${savedTrips.length} trajets`);
+            }
+
+            saveToLocalStorage(); // Sauvegarde les points
+            refreshMap(); 
+        } 
+        catch (err) { 
+            console.error(err);
+            alert("Erreur : Le fichier est invalide."); 
+        }
     };
-    reader.readAsText(file); toggleMenu();
+    reader.readAsText(file); 
+    toggleMenu();
+    // Reset l'input pour pouvoir réimporter le même fichier si besoin
+    input.value = ''; 
+}
+
+// --- MODE POCHE ---
+// Protection contre les clics accidentels + économie batterie (écran noir)
+var lastClickTime = 0;
+function togglePocketMode() {
+    var overlay = document.getElementById('pocket-overlay');
+    var isHidden = overlay.classList.contains('hidden-poche');
+
+    if (isHidden) {
+        // ACTIVER
+        overlay.classList.remove('hidden-poche');
+        toggleMenu(); // Ferme le menu derrière
+    } else {
+        // DÉSACTIVER (Double clic simulé par le temps)
+        var currentTime = new Date().getTime();
+        if (currentTime - lastClickTime < 500) {
+            overlay.classList.add('hidden-poche');
+        } else {
+            // Premier clic : on affiche un petit message visuel ou rien
+            // Ici on attend juste le 2eme clic
+            lastClickTime = currentTime;
+        }
+    }
 }

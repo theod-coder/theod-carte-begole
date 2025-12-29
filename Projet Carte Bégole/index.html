@@ -11,18 +11,23 @@
     <meta name="apple-mobile-web-app-title" content="Bégole Map">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2909/2909419.png">
 
-    <title>Carte Bégole Ultimate 🍄</title>
+    <title>Carte Bégole 🌳</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <div id="map"></div>
+
+    <div id="recording-indicator" class="hidden">🔴 REC</div>
+
+    <div id="pocket-overlay" class="hidden-poche">
+        <div style="font-size:50px; margin-bottom: 20px;">🌑</div>
+        <h2 style="color: #fff; margin: 0;">Mode Poche</h2>
+        <p style="font-size:14px; color:#aaa; margin-top: 5px;">Écran actif • Tactile bloqué</p>
+        <button class="pocket-btn" onclick="togglePocketMode()">Double-clic pour Déverrouiller</button>
+    </div>
 
     <div id="menu-container">
         <button id="menu-toggle" onclick="toggleMenu()">☰ Menu</button>
@@ -32,7 +37,7 @@
             <div class="menu-section-filter">
                 <label>🔍 Filtrer par émoji :</label>
                 <div class="filter-row">
-                    <input type="text" id="filter-input" placeholder="🍄" maxlength="2">
+                    <input type="text" id="filter-input" placeholder=" " maxlength="2">
                     <button onclick="applyFilter()" class="btn-filter-ok">Ok</button>
                     <button onclick="resetFilter()" class="btn-filter-reset">Tout</button>
                 </div>
@@ -46,13 +51,23 @@
             
             <hr>
 
-            <button onclick="showStats()" class="btn-stats">📊 Statistiques</button>
+            <label style="font-size:12px; font-weight:bold; color:#666; margin-bottom:5px; display:block;">👣 Traceur & Ariane</label>
+            
+            <button onclick="toggleTracking()" id="btn-tracking" class="btn-start-track">▶️ Démarrer Trajet</button>
+            <button onclick="openHistory()" class="btn-history">📜 Historique Trajets</button>
+            <button onclick="togglePocketMode()" style="background-color:#34495e;">🌑 Mode Poche (Eco)</button>
+            
+            <div id="wake-status" style="font-size:10px; color:#999; text-align:right; margin-bottom:5px; margin-top: 2px;"></div>
+            
+            <hr>
 
-            <button onclick="toggleLocation()" id="btn-loc" class="btn-loc">📍 Activer GPS</button>
+            <button onclick="showStats()" class="btn-stats">📊 Statistiques Points</button>
+            <button onclick="toggleLocation()" id="btn-loc" class="btn-loc">📍 Ma position (Simple)</button>
+            
             <hr>
             
-            <button onclick="exportData()" class="btn-save">💾 Sauvegarder</button>
-            <button onclick="document.getElementById('fileInput').click()" class="btn-load">📂 Charger</button>
+            <button onclick="exportData()" class="btn-save">💾 Sauvegarder Tout</button>
+            <button onclick="document.getElementById('fileInput').click()" class="btn-load">📂 Charger Sauvegarde</button>
             <button onclick="clearData()" class="btn-danger">🗑️ Tout effacer</button>
         </div>
         
@@ -63,7 +78,7 @@
         <div class="modal-box">
             <h3>Nouveau Point 📍</h3>
             <label>Émoji :</label>
-            <input type="text" id="input-emoji" placeholder="🍄" value="📍" style="font-size: 24px; text-align: center; width: 60px;">
+            <input type="text" id="input-emoji" placeholder=" " value="📍" style="font-size: 24px; text-align: center; width: 60px;">
             <label>Description :</label>
             <textarea id="input-note" placeholder="Ex: Coin à cèpes..."></textarea>
             <div class="modal-buttons">
@@ -74,15 +89,30 @@
     </div>
 
     <div id="stats-overlay" class="hidden" onclick="closeStats()">
-        <div class="modal-box" onclick="event.stopPropagation()"> <h3>📊 Mes Points</h3>
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <h3>📊 Mes Points</h3>
             <div id="stats-content" style="text-align: left; margin-bottom: 20px;">
                 </div>
             <button onclick="closeStats()" class="btn-confirm" style="width:100%">Fermer</button>
         </div>
     </div>
 
+    <div id="history-overlay" class="hidden" onclick="closeHistory()">
+        <div class="modal-box" onclick="event.stopPropagation()" style="max-height: 80vh; display:flex; flex-direction:column;">
+            <h3>👣 Mes Trajets</h3>
+            <div style="margin-bottom:10px;">
+                <button class="btn-load" onclick="showAllTrips()" style="width:100%; font-size:12px; margin-bottom:5px;">👁️ Tout afficher en même temps</button>
+                <button class="btn-cancel" onclick="clearMapLayers()" style="width:100%; font-size:12px;">❌ Effacer les tracés de la carte</button>
+            </div>
+            
+            <div id="tripList" style="overflow-y: auto; flex:1; text-align:left; border-top:1px solid #eee;">
+                </div>
+            
+            <button onclick="closeHistory()" class="btn-confirm" style="width:100%; margin-top:15px;">Fermer</button>
+        </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="script.js"></script>
 
 </body>
