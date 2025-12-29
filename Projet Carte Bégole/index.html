@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2ecc71">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Bégole Map">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2909/2909419.png">
+
+    <title>Carte Bégole Ultimate 🍄</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <div id="menu-container">
+        <button id="menu-toggle" onclick="toggleMenu()">☰ Menu</button>
+        
+        <div id="menu-items" class="hidden-mobile">
+            
+            <div class="menu-section-filter">
+                <label>🔍 Filtrer par émoji :</label>
+                <div class="filter-row">
+                    <input type="text" id="filter-input" placeholder="🍄" maxlength="2">
+                    <button onclick="applyFilter()" class="btn-filter-ok">Ok</button>
+                    <button onclick="resetFilter()" class="btn-filter-reset">Tout</button>
+                </div>
+
+                <label style="margin-top:10px;">📝 Recherche texte :</label>
+                <div class="filter-row">
+                    <input type="text" id="text-filter-input" placeholder="Ex: chêne..." style="width: 100%;">
+                </div>
+                <button onclick="applyTextFilter()" class="btn-search" style="margin-top:5px; padding: 6px;">Chercher</button>
+            </div>
+            
+            <hr>
+
+            <button onclick="showStats()" class="btn-stats">📊 Statistiques</button>
+
+            <button onclick="toggleLocation()" id="btn-loc" class="btn-loc">📍 Activer GPS</button>
+            <hr>
+            
+            <button onclick="exportData()" class="btn-save">💾 Sauvegarder</button>
+            <button onclick="document.getElementById('fileInput').click()" class="btn-load">📂 Charger</button>
+            <button onclick="clearData()" class="btn-danger">🗑️ Tout effacer</button>
+        </div>
+        
+        <input type="file" id="fileInput" style="display: none" onchange="importData(this)">
+    </div>
+
+    <div id="modal-overlay" class="hidden">
+        <div class="modal-box">
+            <h3>Nouveau Point 📍</h3>
+            <label>Émoji :</label>
+            <input type="text" id="input-emoji" placeholder="🍄" value="📍" style="font-size: 24px; text-align: center; width: 60px;">
+            <label>Description :</label>
+            <textarea id="input-note" placeholder="Ex: Coin à cèpes..."></textarea>
+            <div class="modal-buttons">
+                <button onclick="closeModal()" class="btn-cancel">Annuler</button>
+                <button onclick="confirmAddPoint()" class="btn-confirm">Valider</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="stats-overlay" class="hidden" onclick="closeStats()">
+        <div class="modal-box" onclick="event.stopPropagation()"> <h3>📊 Mes Points</h3>
+            <div id="stats-content" style="text-align: left; margin-bottom: 20px;">
+                </div>
+            <button onclick="closeStats()" class="btn-confirm" style="width:100%">Fermer</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="script.js"></script>
+
+</body>
+</html>
