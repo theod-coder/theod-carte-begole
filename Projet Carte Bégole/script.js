@@ -22,6 +22,8 @@ var baseMaps = {
     "Plan Route 🗺️": osmLayer
 };
 L.control.layers(baseMaps, null, { position: 'bottomright' }).addTo(map);
+// --- AJOUT ECHELLE ---
+L.control.scale({imperial: false, metric: true}).addTo(map);
 
 // --- FRONTIÈRES BÉGOLE ---
 fetch('village.json')
@@ -48,6 +50,7 @@ let trackWatchId = null;
 let currentPath = [];
 let currentPolyline = null;
 let wakeLock = null;
+let currentStartTime = null; // Pour le chrono
 let savedTrips = JSON.parse(localStorage.getItem('begole_gps_trips')) || [];
 
 // Chargement initial
@@ -99,9 +102,10 @@ async function toggleTracking() {
     const indicator = document.getElementById('recording-indicator');
 
     if (!isTracking) {
-        // Démarrage
+        // --- DÉMARRAGE ---
         isTracking = true;
         currentPath = [];
+        currentStartTime = new Date(); // On lance le chrono
         
         btn.innerHTML = "⏹️ Arrêter Enregistrement";
         btn.className = "btn-stop-track"; // Change en rouge
@@ -122,7 +126,7 @@ async function toggleTracking() {
         }
         toggleMenu(); // Fermer le menu pour voir la carte
     } else {
-        // Arrêt
+        // --- ARRÊT ---
         isTracking = false;
         navigator.geolocation.clearWatch(trackWatchId);
         
@@ -133,10 +137,11 @@ async function toggleTracking() {
         btn.className = "btn-start-track"; // Revient en vert
         indicator.classList.add('hidden');
 
-        // Sauvegarde
+        // Sauvegarde avec calcul de durée
         if (currentPath.length > 0) {
-            saveTrip(currentPath);
-            alert("Trajet sauvegardé dans l'historique !");
+            const endTime = new Date();
+            saveTrip(currentPath, currentStartTime, endTime);
+            alert(`Trajet terminé !\nDurée : ${formatDuration(endTime - currentStartTime)}`);
         }
         
         // Nettoyage visuel immédiat (on pourra le revoir dans l'historique)
@@ -158,10 +163,14 @@ function updateTrackingPosition(position) {
     map.setView(newLatLng); // Centrer auto
 }
 
-function saveTrip(path) {
+function saveTrip(path, startTime, endTime) {
+    // Calcul durée (si dispo)
+    const duration = (startTime && endTime) ? (endTime - startTime) : 0;
+
     const trip = {
         id: Date.now(),
-        date: new Date().toISOString(),
+        date: (startTime || new Date()).toISOString(),
+        duration: duration,
         points: path
     };
     savedTrips.push(trip);
@@ -178,6 +187,29 @@ function closeHistory() {
     document.getElementById('history-overlay').classList.add('hidden');
 }
 
+// Convertit des millisecondes en texte lisible
+function formatDuration(ms) {
+    if (!ms) return "--";
+    const seconds = Math.floor((ms / 1000) % 60);
+    const minutes = Math.floor((ms / (1000 * 60)) % 60);
+    const hours = Math.floor((ms / (1000 * 60 * 60)));
+
+    if (hours > 0) return `${hours}h ${minutes}min`;
+    return `${minutes}min ${seconds}s`;
+}
+
+// Supprime un trajet spécifique
+function deleteTrip(id, event) {
+    if (event) event.stopPropagation(); // Empêche d'ouvrir le trajet quand on clique sur la poubelle
+    
+    if (confirm("Voulez-vous vraiment supprimer ce trajet de l'historique ?")) {
+        savedTrips = savedTrips.filter(t => t.id !== id);
+        localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
+        renderHistoryList(); // Rafraîchit la liste
+        clearMapLayers(); // Efface la carte au cas où ce trajet était affiché
+    }
+}
+
 function renderHistoryList() {
     const container = document.getElementById('tripList');
     container.innerHTML = '';
@@ -186,47 +218,74 @@ function renderHistoryList() {
     const sorted = savedTrips.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     if(sorted.length === 0) {
-        container.innerHTML = '<div style="padding:10px; color:#999;">Aucun trajet enregistré.</div>';
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Aucun trajet enregistré.</div>';
         return;
     }
 
-    sorted.forEach((trip, index) => {
+    sorted.forEach((trip) => {
         const d = new Date(trip.date);
-        const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const dateStr = d.toLocaleDateString() + ' à ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         
+        // Affichage Durée ou Points (rétro-compatibilité)
+        const infoStr = trip.duration ? `⏱️ ${formatDuration(trip.duration)}` : `📍 ${trip.points.length} points (Ancien)`;
+
         const div = document.createElement('div');
         div.className = 'trip-item';
-        div.innerHTML = `
-            <div>
-                <span class="trip-date">${dateStr}</span>
-                <span class="trip-info">${trip.points.length} points GPS</span>
-            </div>
-            <div style="font-size:20px;">👁️</div>
-        `;
+        // Tout le bloc est cliquable pour voir le trajet
         div.onclick = () => {
             showSingleTrip(trip);
             closeHistory();
         };
+
+        div.innerHTML = `
+            <div style="flex-grow:1;">
+                <span class="trip-date">${dateStr}</span>
+                <span class="trip-info">${infoStr}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <button class="btn-delete-trip" onclick="deleteTrip(${trip.id}, event)">🗑️</button>
+                <div class="trip-action-icon">👁️</div>
+            </div>
+        `;
         container.appendChild(div);
     });
 }
 
+// --- FONCTIONS D'AFFICHAGE ET NETTOYAGE MODIFIÉES ---
+
 function clearMapLayers() {
     tracksLayer.clearLayers();
+    // RÉAPPARITION DES POINTS : On remet les champignons quand on efface les tracés
+    if (!map.hasLayer(markersLayer)) {
+        map.addLayer(markersLayer);
+    }
 }
 
 function showSingleTrip(trip) {
-    clearMapLayers(); // Efface les autres tracés
-    // Affiche le tracé en bleu
+    clearMapLayers(); 
+    
+    // DISPARITION DES POINTS : On cache les champignons pour voir le tracé
+    if (map.hasLayer(markersLayer)) {
+        map.removeLayer(markersLayer);
+    }
+
+    // Affiche le tracé en bleu (Single)
     const poly = L.polyline(trip.points, {color: '#3498db', weight: 5}).addTo(tracksLayer);
     map.fitBounds(poly.getBounds());
 }
 
 function showAllTrips() {
     clearMapLayers();
+    
+    // DISPARITION DES POINTS : On cache les champignons pour voir TOUS les tracés
+    if (map.hasLayer(markersLayer)) {
+        map.removeLayer(markersLayer);
+    }
+
     const allPoints = [];
     savedTrips.forEach(trip => {
-        const poly = L.polyline(trip.points, {color: '#9b59b6', weight: 3, opacity: 0.7}).addTo(tracksLayer);
+        // --- MODIFICATION ICI : COULEUR BLEU (#2980b9) AU LIEU DE VIOLET ---
+        const poly = L.polyline(trip.points, {color: '#2980b9', weight: 3, opacity: 0.8}).addTo(tracksLayer);
         allPoints.push(...trip.points);
     });
     
@@ -273,16 +332,18 @@ function showStats() {
 
     var htmlContent = "";
     if (Object.keys(stats).length === 0) {
-        htmlContent = "<p>Aucun point enregistré.</p>";
+        htmlContent = "<p style='text-align:center; color:#999;'>Aucun point enregistré.</p>";
     } else {
         for (var key in stats) {
             htmlContent += `
                 <div class="stat-row">
-                    <span><span class="stat-emoji">${key}</span></span>
-                    <span class="stat-count">${stats[key]} points</span>
+                    <div style="display:flex; align-items:center;">
+                        <span class="stat-emoji">${key}</span>
+                        <span class="stat-count">${stats[key]} points</span>
+                    </div>
                 </div>`;
         }
-        htmlContent += `<div style="margin-top:15px; font-weight:bold; border-top:2px solid #333; padding-top:10px;">
+        htmlContent += `<div style="margin-top:15px; text-align:center; font-weight:bold; color:#666; font-size:14px;">
             Total : ${savedPoints.length} points
         </div>`;
     }
@@ -304,7 +365,7 @@ function toggleLocation() {
         if (userMarker) map.removeLayer(userMarker);
         if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
         userMarker = null; 
-        btn.innerHTML = "📍 Juste ma position"; btn.style.backgroundColor = "#9b59b6";
+        btn.innerHTML = "📍 Ma position (Simple)"; btn.style.backgroundColor = "#9b59b6";
         toggleMenu(); 
     } else {
         if (!navigator.geolocation) { alert("Pas de GPS"); return; }
@@ -418,7 +479,8 @@ function clearData() {
         toggleMenu();
     }
 }
-// --- SAUVEGARDE ET CHARGEMENT (Modifié pour inclure les trajets) ---
+
+// --- SAUVEGARDE ET CHARGEMENT (COMPLET : POINTS + TRAJETS) ---
 
 function exportData() {
     // On crée un objet complet avec les deux listes
@@ -449,18 +511,17 @@ function importData(input) {
         try { 
             const data = JSON.parse(e.target.result);
             
-            // Gestion de la compatibilité (si c'est un ancien fichier avec juste des points)
+            // Gestion de la compatibilité
             if (Array.isArray(data)) {
-                // Ancien format : c'est juste une liste de points
+                // Ancien format : liste de points uniquement
                 savedPoints = data;
-                // On ne touche pas aux trajets existants dans ce cas, ou on peut avertir
                 alert("Ancien format détecté : Seuls les points ont été importés.");
             } else {
                 // Nouveau format : objet { points: [], trips: [] }
                 if (data.points) savedPoints = data.points;
                 if (data.trips) savedTrips = data.trips;
                 
-                // Sauvegarde immédiate dans le stockage du téléphone
+                // Sauvegarde immédiate
                 localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
                 alert(`Import réussi !\n${savedPoints.length} points\n${savedTrips.length} trajets`);
             }
@@ -496,8 +557,7 @@ function togglePocketMode() {
         if (currentTime - lastClickTime < 500) {
             overlay.classList.add('hidden-poche');
         } else {
-            // Premier clic : on affiche un petit message visuel ou rien
-            // Ici on attend juste le 2eme clic
+            // Premier clic : attente du 2eme
             lastClickTime = currentTime;
         }
     }
