@@ -1,0 +1,7 @@
+[build]
+  # Indique ton dossier de base (le nom exact de ton dossier)
+  base = "Projet Carte Bégole"
+  
+  # Cette ligne magique force le build à chaque fois
+  # (Elle dit : "Est-ce que je dois ignorer ce build ? Réponse : FAUX")
+  ignore = "false"
