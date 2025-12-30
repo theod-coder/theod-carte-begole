@@ -1,8 +1,10 @@
-// --- CONFIGURATION ---
+// ============================================================
+// --- CONFIGURATION & INIT ---
+// ============================================================
 const VILLAGE_COORDS = [43.1565, 0.3235]; 
 const DEFAULT_ZOOM = 13;
 
-// --- 1. INITIALISATION DES FONDS DE CARTE ---
+// Fonds de carte
 var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
 
 var satelliteLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg', {
@@ -14,13 +16,13 @@ var cadastreLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST
 
 var map = L.map('map', { center: VILLAGE_COORDS, zoom: DEFAULT_ZOOM, layers: [satelliteLayer] }); 
 
-// Gestion des calques
+// Contrôle des calques
 var baseMaps = { "Satellite IGN 🇫🇷": satelliteLayer, "Plan Route 🗺️": osmLayer };
 var overlayMaps = { "Cadastre (Traits) 🏠": cadastreLayer };
 L.control.layers(baseMaps, overlayMaps, { position: 'bottomright' }).addTo(map);
 L.control.scale({imperial: false, metric: true}).addTo(map); 
 
-// FRONTIÈRES BÉGOLE
+// Frontières Village (Optionnel)
 fetch('village.json').then(r => r.json()).then(data => {
     L.geoJSON(data, { style: { color: '#ff3333', weight: 3, opacity: 0.8, fillOpacity: 0.05 } }).addTo(map);
 }).catch(e => console.log("Pas de village.json"));
@@ -29,36 +31,43 @@ fetch('village.json').then(r => r.json()).then(data => {
 // --- VARIABLES GLOBALES ---
 var savedPoints = []; 
 var savedParcels = []; 
+var savedTrips = JSON.parse(localStorage.getItem('begole_gps_trips')) || [];
+
+// Groupes de calques
 var markersLayer = L.layerGroup().addTo(map);
 var tracksLayer = L.layerGroup().addTo(map);
 var parcelsLayer = L.layerGroup(); 
 var heatLayer = null; 
 
+// Variables Tracking
 var isTracking = false; var trackWatchId = null; 
 var currentPath = []; var currentStartTime = null; 
 var currentDistance = 0; 
+var currentPolyline = null;
 var timerInterval = null; 
-var savedTrips = JSON.parse(localStorage.getItem('begole_gps_trips')) || [];
 var wakeLock = null;
 
-// Variables Filtres
+// Variables Filtres & Gestion
 var currentFilterEmoji = null; 
 var currentFilterText = null;
 var currentFilterYear = 'all'; 
 
-// Variables Gestion
 var isAutoCentering = true; 
 var isCadastreMode = false;
 var currentParcelGeoJSON = null; 
 var selectedParcelColor = '#95a5a6'; 
-var tempLatLng = null;
+var tempLatLng = null; // Position temporaire pour nouveau point
 var currentEditingIndex = -1;
 var currentEditingTripId = null;
+var userMarker = null; 
+var userAccuracyCircle = null;
 
+// Chargement initial
 loadFromLocalStorage();
 
+
 // ============================================================
-// --- LOGIQUE HEATMAP ---
+// --- LOGIQUE HEATMAP (CARTE DE CHALEUR) ---
 // ============================================================
 
 function toggleHeatmap() {
@@ -68,6 +77,7 @@ function toggleHeatmap() {
         let heatPoints = [];
         savedTrips.forEach(trip => {
             trip.points.forEach(pt => {
+                // Leaflet heat attend [lat, lng, intensité]
                 heatPoints.push([pt[0], pt[1], 0.5]); 
             });
         });
@@ -96,7 +106,112 @@ function toggleHeatmap() {
 
 
 // ============================================================
-// --- LOGIQUE SMART FOLLOW ---
+// --- LOGIQUE CALCUL SURFACE (CADASTRE) ---
+// ============================================================
+
+// Formule Shoelace adaptée aux coord GPS (Lat/Lon) pour obtenir des m²
+function getRingArea(coords) {
+    if (!coords || coords.length < 3) return 0;
+    
+    let area = 0;
+    const DEG_TO_M = 111319; // approx: 1 deg ~ 111km
+    
+    // On cale l'échelle de longitude sur la latitude moyenne du terrain pour limiter la distorsion
+    const meanLat = coords[0][1] * Math.PI / 180;
+    const lonScale = Math.cos(meanLat);
+
+    for (let i = 0; i < coords.length; i++) {
+        let p1 = coords[i];
+        let p2 = coords[(i + 1) % coords.length]; // Bouclage
+
+        // Projection locale en mètres
+        let x1 = p1[0] * DEG_TO_M * lonScale;
+        let y1 = p1[1] * DEG_TO_M;
+        let x2 = p2[0] * DEG_TO_M * lonScale;
+        let y2 = p2[1] * DEG_TO_M;
+
+        area += (x1 * y2) - (x2 * y1);
+    }
+    return Math.abs(area / 2.0);
+}
+
+// Gère Polygone simple ET MultiPolygone (cas fréquent IGN)
+function calculateGeoJSONArea(geometry) {
+    let totalArea = 0;
+    if (!geometry) return 0;
+
+    if (geometry.type === "Polygon") {
+        // coordinates[0] est l'anneau extérieur
+        totalArea += getRingArea(geometry.coordinates[0]);
+    } 
+    else if (geometry.type === "MultiPolygon") {
+        // Tableau de polygones
+        geometry.coordinates.forEach(polygon => {
+            totalArea += getRingArea(polygon[0]);
+        });
+    }
+    return totalArea;
+}
+
+function showCadastreStats() {
+    let totalCount = 0;
+    let totalArea = 0;
+    let statsByColor = {}; 
+
+    savedParcels.forEach(p => {
+        totalCount++;
+        let area = calculateGeoJSONArea(p.geoJSON.geometry);
+        totalArea += area;
+
+        if (!statsByColor[p.color]) {
+            statsByColor[p.color] = { count: 0, area: 0 };
+        }
+        statsByColor[p.color].count++;
+        statsByColor[p.color].area += area;
+    });
+
+    let totalHa = (totalArea / 10000).toFixed(2);
+    let totalM2 = Math.round(totalArea);
+
+    let html = `
+        <div style="text-align:center; margin-bottom:15px;">
+            <span style="font-size:24px; font-weight:800; color:#2c3e50;">${totalHa} ha</span><br>
+            <span style="font-size:12px; color:#7f8c8d;">(${totalM2} m²)</span><br>
+            <span style="font-weight:bold; color:#e67e22;">${totalCount} parcelles</span>
+        </div>
+        <hr style="margin: 10px 0; border:0; border-top:1px solid #eee;">
+    `;
+
+    for (let color in statsByColor) {
+        let s = statsByColor[color];
+        let sHa = (s.area / 10000).toFixed(2);
+        let sM2 = Math.round(s.area);
+        
+        html += `
+            <div class="cadastre-stat-row">
+                <div style="display:flex; align-items:center;">
+                    <span class="color-dot" style="background:${color};"></span>
+                    <span>${s.count} parcelles</span>
+                </div>
+                <div style="text-align:right;">
+                    <strong>${sHa} ha</strong><br>
+                    <small style="color:#aaa;">${sM2} m²</small>
+                </div>
+            </div>
+        `;
+    }
+    if (totalCount === 0) html += "<p style='text-align:center; color:#999;'>Aucune parcelle enregistrée.</p>";
+
+    document.getElementById('cadastre-stats-content').innerHTML = html;
+    document.getElementById('modal-cadastre-stats').classList.remove('hidden');
+    toggleMenu();
+}
+
+function closeCadastreStats() { document.getElementById('modal-cadastre-stats').classList.add('hidden'); }
+
+
+// ============================================================
+// --- GESTION SMART FOLLOW (SUIVI CARTE) ---
 // ============================================================
 
 map.on('dragstart', function() {
@@ -116,37 +231,7 @@ function enableAutoCenter() {
 
 
 // ============================================================
-// --- UTILITAIRES : TOASTS & HAPTIQUE ---
-// ============================================================
-
-function showToast(message, duration = 3000) {
-    const container = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
-    container.appendChild(toast);
-    setTimeout(() => { toast.classList.add('show'); }, 10);
-    setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => { toast.remove(); }, 300);
-    }, duration);
-}
-
-function triggerHaptic(type) {
-    if (!navigator.vibrate) return;
-    switch (type) {
-        case 'success': navigator.vibrate(50); break; 
-        case 'warning': navigator.vibrate([50, 50, 50]); break; 
-        case 'error': navigator.vibrate([100, 50, 100, 50, 100]); break; 
-        case 'start': navigator.vibrate(200); break; 
-        case 'stop': navigator.vibrate([200, 100, 200]); break; 
-        default: navigator.vibrate(50);
-    }
-}
-
-
-// ============================================================
-// --- GESTION DU CADASTRE ---
+// --- GESTION DU CADASTRE (SELECTION & COLORIAGE) ---
 // ============================================================
 
 function toggleCadastreMode() {
@@ -264,7 +349,7 @@ function clearParcels() {
 
 
 // ============================================================
-// --- TRACEUR GPS & DASHBOARD ---
+// --- TRACEUR GPS & ENREGISTREMENT ---
 // ============================================================
 
 function toggleMenu() { document.getElementById('menu-items').classList.toggle('hidden-mobile'); }
@@ -275,7 +360,7 @@ async function toggleTracking() {
     const dashboard = document.getElementById('dashboard');
 
     if (!isTracking) {
-        // START
+        // --- START ---
         isTracking = true; 
         isAutoCentering = true; 
         document.getElementById('btn-recenter').classList.add('hidden'); 
@@ -290,7 +375,7 @@ async function toggleTracking() {
         showToast("🚀 Enregistrement démarré !");
         triggerHaptic('start');
     } else {
-        // STOP
+        // --- STOP ---
         isTracking = false; 
         document.getElementById('btn-recenter').classList.add('hidden'); 
         
@@ -300,7 +385,7 @@ async function toggleTracking() {
 
         if (currentPath.length > 0) {
             const endTime = new Date();
-            // CALCUL DU DENIVELÉ
+            // Calcul du Dénivelé
             const elevationStats = calculateElevation(currentPath);
             
             saveTrip(currentPath, currentStartTime, endTime, currentDistance, elevationStats);
@@ -311,13 +396,11 @@ async function toggleTracking() {
     }
 }
 
-// MISE A JOUR POSITION (Avec Altitude)
+// Mise à jour position pendant le tracking (avec Altitude)
 function updateTrackingPosition(pos) {
-    // On ajoute l'altitude (ou 0 si inconnue) en 3ème paramètre
     const newLatLng = [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0];
     
     if (currentPath.length > 0) {
-        // Pour la distance on ne prend que lat/lng (Leaflet gère ça)
         currentDistance += (map.distance([currentPath[currentPath.length - 1][0], currentPath[currentPath.length - 1][1]], [newLatLng[0], newLatLng[1]]) / 1000);
     }
     updateDashboard(pos.coords.altitude, pos.coords.speed, currentDistance);
@@ -327,7 +410,6 @@ function updateTrackingPosition(pos) {
     }
     updateUserMarker(newLatLng[0], newLatLng[1], pos.coords.accuracy, pos.coords.heading);
     currentPath.push(newLatLng); 
-    // Pour la polyline, Leaflet ignore la 3eme coordonnée automatiquement, pas de souci
     currentPolyline.setLatLngs(currentPath); 
 }
 
@@ -345,7 +427,7 @@ function startTimer() {
 }
 function stopTimer() { clearInterval(timerInterval); document.getElementById('recording-timer').innerText = "00:00"; }
 
-// CALCULATEUR DE DÉNIVELÉ (Avec seuil de 5m pour éviter le bruit GPS)
+// Algorithme de calcul du Dénivelé (Filtre anti-bruit 5m)
 function calculateElevation(points) {
     let gain = 0;
     let loss = 0;
@@ -355,15 +437,13 @@ function calculateElevation(points) {
 
     for (let i = 1; i < points.length; i++) {
         let currAlt = points[i][2];
-        // On vérifie que l'altitude n'est pas nulle (ou bugguée)
         if (currAlt !== undefined && currAlt !== null && lastAlt !== undefined && lastAlt !== null) {
             let diff = currAlt - lastAlt;
             
-            // FILTRE : On ignore les variations < 5 mètres (bruit GPS)
             if (Math.abs(diff) > 5) {
                 if (diff > 0) gain += diff;
                 else loss += Math.abs(diff);
-                lastAlt = currAlt; // On met à jour l'altitude de référence
+                lastAlt = currAlt;
             }
         }
     }
@@ -382,13 +462,17 @@ function saveTrip(path, start, end, distKm, elevationStats) {
         avgSpeed: avgSpeed, 
         points: path, 
         note: "",
-        elevationGain: elevationStats ? elevationStats.gain : 0, // D+
-        elevationLoss: elevationStats ? elevationStats.loss : 0  // D-
+        elevationGain: elevationStats ? elevationStats.gain : 0, 
+        elevationLoss: elevationStats ? elevationStats.loss : 0 
     });
     localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
 }
 
-// --- HISTORIQUE TRAJETS & FILTRES DISTANCE ---
+
+// ============================================================
+// --- HISTORIQUE TRAJETS & AFFICHAGE ---
+// ============================================================
+
 function openHistory() { renderHistoryList(); document.getElementById('history-overlay').classList.remove('hidden'); toggleMenu(); }
 function closeHistory() { document.getElementById('history-overlay').classList.add('hidden'); }
 
@@ -408,7 +492,6 @@ function renderHistoryList() {
             const d = new Date(trip.date);
             const distStr = trip.distance ? `${trip.distance.toFixed(2)} km` : "";
             const durStr = trip.duration ? formatDuration(trip.duration) : "";
-            // Affichage du D+
             const elevStr = trip.elevationGain ? `🏔️ +${trip.elevationGain}m` : ""; 
             const noteDisplay = trip.note ? `<br><small style="color:#e67e22;">📝 ${trip.note}</small>` : "";
 
@@ -487,7 +570,6 @@ function deleteTrip(id) {
     } 
 }
 
-// GESTION DES NOTES DE TRAJET
 function openEditTripModal(id) {
     const trip = savedTrips.find(t => t.id === id);
     if (trip) {
@@ -506,7 +588,6 @@ function confirmSaveTripNote() {
     if (currentEditingTripId) {
         const note = document.getElementById('edit-trip-note').value;
         const tripIndex = savedTrips.findIndex(t => t.id === currentEditingTripId);
-        
         if (tripIndex > -1) {
             savedTrips[tripIndex].note = note;
             localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
@@ -518,7 +599,6 @@ function confirmSaveTripNote() {
     }
 }
 
-
 function clearMapLayers() { 
     tracksLayer.clearLayers(); 
     if(heatLayer) map.removeLayer(heatLayer); 
@@ -527,14 +607,14 @@ function clearMapLayers() {
     if(!isParcelsOn && !isSelectOn && !map.hasLayer(markersLayer)) map.addLayer(markersLayer);
 }
 
-// --- FONCTIONS GENERALES ---
-async function requestWakeLock() { try { if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
-async function releaseWakeLock() { if(wakeLock) { await wakeLock.release(); wakeLock=null; } }
+
+// ============================================================
+// --- GESTION POINTS, NOTES & FILTRES ---
+// ============================================================
 
 function openModal() { document.getElementById('modal-overlay').classList.remove('hidden'); }
 function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
 
-// CREATION NOUVEAU POINT
 function confirmAddPoint() {
     const emoji = document.getElementById('input-emoji').value || "📍";
     const note = document.getElementById('input-note').value;
@@ -553,10 +633,6 @@ function confirmAddPoint() {
     showToast("📍 Point ajouté !");
     triggerHaptic('success');
 }
-
-// ============================================================
-// --- GESTION EDITION & FILTRES ---
-// ============================================================
 
 function updateYearFilterOptions() {
     const select = document.getElementById('filter-year');
@@ -682,6 +758,33 @@ function deletePoint(i) {
     updateYearFilterOptions(); 
 }
 
+// --- UTILITAIRES DIVERS ---
+
+function showToast(message, duration = 3000) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => { toast.classList.add('show'); }, 10);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => { toast.remove(); }, 300);
+    }, duration);
+}
+
+function triggerHaptic(type) {
+    if (!navigator.vibrate) return;
+    switch (type) {
+        case 'success': navigator.vibrate(50); break; 
+        case 'warning': navigator.vibrate([50, 50, 50]); break; 
+        case 'error': navigator.vibrate([100, 50, 100, 50, 100]); break; 
+        case 'start': navigator.vibrate(200); break; 
+        case 'stop': navigator.vibrate([200, 100, 200]); break; 
+        default: navigator.vibrate(50);
+    }
+}
+
 function saveToLocalStorage() { localStorage.setItem('myMapPoints', JSON.stringify(savedPoints)); localStorage.setItem('myMapParcels', JSON.stringify(savedParcels)); }
 function loadFromLocalStorage() { 
     savedPoints = JSON.parse(localStorage.getItem('myMapPoints')) || []; 
@@ -735,7 +838,6 @@ function toggleLocation() {
     );
 }
 
-var userMarker=null; var userAccuracyCircle=null;
 function updateUserMarker(lat, lng, acc, heading) {
     if(!userMarker) {
         var icon = L.divIcon({ 
@@ -766,13 +868,9 @@ function resetFilter() {
 }
 
 // ============================================================
-// --- STATS TRIÉES PAR ORDRE CROISSANT + D+ MOYEN ---
-// ============================================================
-// ============================================================
-// --- STATS TRIÉES + 4 INDICATEURS ---
+// --- STATS GLOBALES (4 BLOCS) ---
 // ============================================================
 function showStats() {
-    // 1. Calcul des stats globales
     const totalTrips = savedTrips.length;
     let totalDist = 0;
     let totalDuration = 0;
@@ -790,10 +888,8 @@ function showStats() {
         globalAvgSpeed = totalDist / hours;
     }
     
-    // Moyenne D+ par trajet
     let avgElevation = totalTrips > 0 ? (totalElevationGain / totalTrips) : 0;
 
-    // 2. Génération HTML des 4 cartes
     let html = `
         <div class="stats-summary">
             <div class="stat-card">
@@ -817,7 +913,6 @@ function showStats() {
         <h4>📍 Points par catégorie (Ordre croissant) :</h4>
     `;
 
-    // 3. Stats des points (Tri Croissant)
     var stats = {};
     savedPoints.forEach(p => { stats[p.emoji||"❓"] = (stats[p.emoji||"❓"]||0)+1; });
     
@@ -841,6 +936,8 @@ function showStats() {
 }
 
 function closeStats() { document.getElementById('stats-overlay').classList.add('hidden'); }
+async function requestWakeLock() { try { if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
+async function releaseWakeLock() { if(wakeLock) { await wakeLock.release(); wakeLock=null; } }
 
 var lastClick=0; function togglePocketMode() { 
     const el=document.getElementById('pocket-overlay'); 

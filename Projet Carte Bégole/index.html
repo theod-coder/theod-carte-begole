@@ -83,12 +83,14 @@
                 </label>
             </div>
 
+            <button onclick="showCadastreStats()" style="background-color:#f39c12; font-size:12px; margin-bottom:5px;">📊 Stats Cadastre (Surfaces)</button>
+
             <button onclick="clearParcels()" style="background-color:#d35400; font-size:12px; margin-bottom:10px;">🗑️ Effacer parcelles coloriées</button>
             
             <hr>
 
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-                <span style="font-size:13px; color:#c0392b; font-weight:bold;">🔥 Heatmap (Zones fréquentes)</span>
+                <span style="font-size:13px; color:#c0392b; font-weight:bold;">🔥 Heatmap</span>
                 <label class="switch">
                   <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()">
                   <span class="slider round"></span>
@@ -123,13 +125,13 @@
             
             <button onclick="toggleTracking()" id="btn-tracking" class="btn-start-track">▶️ Démarrer Trajet</button>
             <button onclick="openHistory()" class="btn-history">📜 Historique Trajets</button>
-            <button onclick="togglePocketMode()" style="background-color:#34495e;">🌑 Mode Poche (Eco)</button>
+            <button onclick="togglePocketMode()" style="background-color:#34495e;">🌑 Mode Poche</button>
             
             <div id="wake-status" style="font-size:10px; color:#999; text-align:right; margin-bottom:5px; margin-top: 2px;"></div>
             
             <hr>
 
-            <button onclick="showStats()" class="btn-stats">📊 Statistiques</button>
+            <button onclick="showStats()" class="btn-stats">📊 Statistiques Générales</button>
             <button onclick="toggleLocation()" id="btn-loc" class="btn-loc">📍 Ma position</button>
             
             <hr>
@@ -148,7 +150,7 @@
             <label>Émoji :</label>
             <input type="text" id="input-emoji" placeholder=" " value="📍" style="font-size: 24px; text-align: center; width: 60px;">
             <label>Description :</label>
-            <textarea id="input-note" placeholder="Ex: Tanière du renard"></textarea>
+            <textarea id="input-note" placeholder="Ex: Coin à cèpes..."></textarea>
             <div class="modal-buttons">
                 <button onclick="closeModal()" class="btn-cancel">Annuler</button>
                 <button onclick="confirmAddPoint()" class="btn-confirm">Valider</button>
@@ -205,7 +207,7 @@
         <div class="modal-box">
             <h3 style="background-color:#8e44ad;">✏️ Note du Trajet</h3>
             <label>Note / Météo / Champignons trouvés :</label>
-            <textarea id="edit-trip-note" placeholder="Ex: Rando sous la pluie, rien trouvé..."></textarea>
+            <textarea id="edit-trip-note" placeholder="Ex: Promenade dans le brouillard, aucune bête en vue"></textarea>
             <div class="modal-buttons">
                 <button onclick="closeEditTripModal()" class="btn-cancel">Annuler</button>
                 <button onclick="confirmSaveTripNote()" class="btn-confirm" style="background-color:#8e44ad;">Sauvegarder</button>
@@ -215,9 +217,18 @@
 
     <div id="stats-overlay" class="hidden" onclick="closeStats()">
         <div class="modal-box" onclick="event.stopPropagation()">
-            <h3>📊 Mes Points</h3>
+            <h3>📊 Mes Stats</h3>
             <div id="stats-content" style="text-align: left; margin-bottom: 20px;"></div>
             <button onclick="closeStats()" class="btn-confirm" style="width:100%">Fermer</button>
+        </div>
+    </div>
+
+    <div id="modal-cadastre-stats" class="hidden" onclick="closeCadastreStats()">
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <h3 style="background-color:#f39c12;">🏠 Bilan Foncier</h3>
+            <div id="cadastre-stats-content" style="padding:15px; text-align: left;">
+                </div>
+            <button onclick="closeCadastreStats()" class="btn-confirm" style="width:100%; margin: 0 0 15px 0;">Fermer</button>
         </div>
     </div>
 
