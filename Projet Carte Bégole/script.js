@@ -1,10 +1,10 @@
 // ============================================================
-// --- CONFIGURATION & INIT ---
+// --- 1. CONFIGURATION & INITIALISATION CARTE ---
 // ============================================================
 const VILLAGE_COORDS = [43.1565, 0.3235]; 
 const DEFAULT_ZOOM = 13;
 
-// Fonds de carte
+// --- Fonds de carte ---
 var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
 
 var satelliteLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg', {
@@ -14,32 +14,36 @@ var satelliteLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUES
 
 var cadastreLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=CADASTRALPARCELS.PARCELS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png', { maxZoom: 20, attribution: '© IGN' });
 
+// --- Création de la Carte ---
 var map = L.map('map', { center: VILLAGE_COORDS, zoom: DEFAULT_ZOOM, layers: [satelliteLayer] }); 
 
-// Contrôle des calques
+// --- Contrôle des Calques ---
 var baseMaps = { "Satellite IGN 🇫🇷": satelliteLayer, "Plan Route 🗺️": osmLayer };
 var overlayMaps = { "Cadastre (Traits) 🏠": cadastreLayer };
 L.control.layers(baseMaps, overlayMaps, { position: 'bottomright' }).addTo(map);
 L.control.scale({imperial: false, metric: true}).addTo(map); 
 
-// Frontières Village (Optionnel)
+// --- Frontières Village ---
 fetch('village.json').then(r => r.json()).then(data => {
     L.geoJSON(data, { style: { color: '#ff3333', weight: 3, opacity: 0.8, fillOpacity: 0.05 } }).addTo(map);
 }).catch(e => console.log("Pas de village.json"));
 
 
-// --- VARIABLES GLOBALES ---
+// ============================================================
+// --- 2. VARIABLES GLOBALES ---
+// ============================================================
+// Ces tableaux servent de tampon pour l'affichage rapide
 var savedPoints = []; 
 var savedParcels = []; 
-var savedTrips = JSON.parse(localStorage.getItem('begole_gps_trips')) || [];
+var savedTrips = [];
 
-// Groupes de calques
+// Calques Leaflet
 var markersLayer = L.layerGroup().addTo(map);
 var tracksLayer = L.layerGroup().addTo(map);
 var parcelsLayer = L.layerGroup(); 
 var heatLayer = null; 
 
-// Variables Tracking
+// Tracking GPS
 var isTracking = false; var trackWatchId = null; 
 var currentPath = []; var currentStartTime = null; 
 var currentDistance = 0; 
@@ -47,7 +51,7 @@ var currentPolyline = null;
 var timerInterval = null; 
 var wakeLock = null;
 
-// Variables Filtres & Gestion
+// Filtres & UI
 var currentFilterEmoji = null; 
 var currentFilterText = null;
 var currentFilterYear = 'all'; 
@@ -56,18 +60,181 @@ var isAutoCentering = true;
 var isCadastreMode = false;
 var currentParcelGeoJSON = null; 
 var selectedParcelColor = '#95a5a6'; 
-var tempLatLng = null; // Position temporaire pour nouveau point
-var currentEditingIndex = -1;
+var tempLatLng = null; 
+var currentEditingIndex = -1; // Pour les points
 var currentEditingTripId = null;
 var userMarker = null; 
 var userAccuracyCircle = null;
 
-// Chargement initial
-loadFromLocalStorage();
+
+// ============================================================
+// --- 3. GESTION DE LA BASE DE DONNÉES (INDEXED DB) ---
+// ============================================================
+
+const DB_NAME = "BegoleMapDB";
+const DB_VERSION = 1;
+let db = null;
+
+// Initialisation & Migration
+function initDB() {
+    return new Promise((resolve, reject) => {
+        // Compatibilité vibrations (Info console)
+        if (!("vibrate" in navigator)) {
+            console.warn("Vibrations non supportées sur cet appareil (ex: iPhone).");
+        }
+
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+        request.onupgradeneeded = function(event) {
+            db = event.target.result;
+            // Création des tables
+            if (!db.objectStoreNames.contains('points')) {
+                db.createObjectStore('points', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('parcels')) {
+                db.createObjectStore('parcels', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('trips')) {
+                db.createObjectStore('trips', { keyPath: 'id' });
+            }
+        };
+
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            console.log("Base de données chargée avec succès.");
+            resolve(db);
+        };
+
+        request.onerror = function(event) {
+            console.error("Erreur DB:", event.target.errorCode);
+            reject("Erreur ouverture DB");
+        };
+    });
+}
+
+// Fonction générique pour sauvegarder
+function saveToDB(storeName, data) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], "readwrite");
+        const store = transaction.objectStore(storeName);
+        const request = store.put(data);
+        request.onsuccess = () => resolve();
+        request.onerror = (e) => reject(e);
+    });
+}
+
+// Fonction générique pour supprimer
+function deleteFromDB(storeName, id) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], "readwrite");
+        const store = transaction.objectStore(storeName);
+        const request = store.delete(id);
+        request.onsuccess = () => resolve();
+        request.onerror = (e) => reject(e);
+    });
+}
+
+// Fonction générique pour tout charger
+function loadAllFromDB(storeName) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], "readonly");
+        const store = transaction.objectStore(storeName);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (e) => reject(e);
+    });
+}
+
+// Fonction pour tout effacer (Reset)
+function clearStoreDB(storeName) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], "readwrite");
+        const store = transaction.objectStore(storeName);
+        const request = store.clear();
+        request.onsuccess = () => resolve();
+        request.onerror = (e) => reject(e);
+    });
+}
+
+// --- MIGRATION DU LOCALSTORAGE (UNE SEULE FOIS) ---
+async function migrateLocalStorage() {
+    const oldPoints = localStorage.getItem('myMapPoints');
+    const oldParcels = localStorage.getItem('myMapParcels');
+    const oldTrips = localStorage.getItem('begole_gps_trips');
+
+    if (oldPoints || oldParcels || oldTrips) {
+        console.log("Migration des données en cours...");
+        
+        if (oldPoints) {
+            const pts = JSON.parse(oldPoints);
+            for (let p of pts) { 
+                if(!p.id) p.id = Date.now() + Math.random(); 
+                await saveToDB('points', p); 
+            }
+            localStorage.removeItem('myMapPoints');
+        }
+        if (oldParcels) {
+            const prc = JSON.parse(oldParcels);
+            for (let p of prc) { await saveToDB('parcels', p); }
+            localStorage.removeItem('myMapParcels');
+        }
+        if (oldTrips) {
+            const trps = JSON.parse(oldTrips);
+            for (let t of trps) { await saveToDB('trips', t); }
+            localStorage.removeItem('begole_gps_trips');
+        }
+        showToast("✅ Migration des données terminée !");
+    }
+}
+
+// --- CHARGEMENT APPLICATION ---
+async function startApp() {
+    await initDB();
+    await migrateLocalStorage();
+    
+    // Chargement en mémoire vive
+    savedPoints = await loadAllFromDB('points');
+    savedParcels = await loadAllFromDB('parcels');
+    savedTrips = await loadAllFromDB('trips');
+
+    updateYearFilterOptions();
+    refreshMap();
+    displayParcels();
+    checkCrashRecovery();
+}
+
+startApp();
 
 
 // ============================================================
-// --- LOGIQUE HEATMAP (CARTE DE CHALEUR) ---
+// --- JAUGE STOCKAGE (Version DB) ---
+// ============================================================
+async function checkStorageUsage() {
+    if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        const usage = estimate.usage; 
+        const quota = estimate.quota; 
+        const percentage = (usage / quota) * 100;
+        
+        const bar = document.getElementById('storage-bar');
+        const text = document.getElementById('storage-text');
+        
+        if(bar && text) {
+            let sizeMb = (usage / (1024 * 1024)).toFixed(1);
+            text.innerText = `${sizeMb} MB (${percentage.toFixed(2)}%)`;
+            bar.style.width = percentage < 1 ? "1%" : percentage + "%"; 
+            
+            if(percentage > 80) bar.style.backgroundColor = "#e74c3c";
+            else bar.style.backgroundColor = "#2ecc71";
+        }
+    } else {
+        document.getElementById('storage-text').innerText = "Stockage Illimité";
+    }
+}
+
+
+// ============================================================
+// --- 4. HEATMAP ---
 // ============================================================
 
 function toggleHeatmap() {
@@ -77,7 +244,6 @@ function toggleHeatmap() {
         let heatPoints = [];
         savedTrips.forEach(trip => {
             trip.points.forEach(pt => {
-                // Leaflet heat attend [lat, lng, intensité]
                 heatPoints.push([pt[0], pt[1], 0.5]); 
             });
         });
@@ -94,10 +260,7 @@ function toggleHeatmap() {
             heatLayer = L.heatLayer(heatPoints, { radius: 20, blur: 15, maxZoom: 17 }).addTo(map);
             showToast("🔥 Heatmap activée");
             toggleMenu();
-        } else {
-            showToast("❌ Erreur chargement librairie Heatmap");
         }
-
     } else {
         if(heatLayer) map.removeLayer(heatLayer);
         showToast("Heatmap désactivée");
@@ -106,46 +269,34 @@ function toggleHeatmap() {
 
 
 // ============================================================
-// --- LOGIQUE CALCUL SURFACE (CADASTRE) ---
+// --- 5. CALCULS SURFACE & CADASTRE ---
 // ============================================================
 
-// Formule Shoelace adaptée aux coord GPS (Lat/Lon) pour obtenir des m²
 function getRingArea(coords) {
     if (!coords || coords.length < 3) return 0;
-    
     let area = 0;
-    const DEG_TO_M = 111319; // approx: 1 deg ~ 111km
-    
-    // On cale l'échelle de longitude sur la latitude moyenne du terrain pour limiter la distorsion
+    const DEG_TO_M = 111319;
     const meanLat = coords[0][1] * Math.PI / 180;
     const lonScale = Math.cos(meanLat);
 
     for (let i = 0; i < coords.length; i++) {
         let p1 = coords[i];
-        let p2 = coords[(i + 1) % coords.length]; // Bouclage
-
-        // Projection locale en mètres
+        let p2 = coords[(i + 1) % coords.length];
         let x1 = p1[0] * DEG_TO_M * lonScale;
         let y1 = p1[1] * DEG_TO_M;
         let x2 = p2[0] * DEG_TO_M * lonScale;
         let y2 = p2[1] * DEG_TO_M;
-
         area += (x1 * y2) - (x2 * y1);
     }
     return Math.abs(area / 2.0);
 }
 
-// Gère Polygone simple ET MultiPolygone (cas fréquent IGN)
 function calculateGeoJSONArea(geometry) {
     let totalArea = 0;
     if (!geometry) return 0;
-
     if (geometry.type === "Polygon") {
-        // coordinates[0] est l'anneau extérieur
         totalArea += getRingArea(geometry.coordinates[0]);
-    } 
-    else if (geometry.type === "MultiPolygon") {
-        // Tableau de polygones
+    } else if (geometry.type === "MultiPolygon") {
         geometry.coordinates.forEach(polygon => {
             totalArea += getRingArea(polygon[0]);
         });
@@ -160,12 +311,15 @@ function showCadastreStats() {
 
     savedParcels.forEach(p => {
         totalCount++;
-        let area = calculateGeoJSONArea(p.geoJSON.geometry);
+        let area = 0;
+        if(p.geoJSON.properties.contenance) {
+            area = parseInt(p.geoJSON.properties.contenance);
+        } else {
+            area = calculateGeoJSONArea(p.geoJSON.geometry);
+        }
         totalArea += area;
 
-        if (!statsByColor[p.color]) {
-            statsByColor[p.color] = { count: 0, area: 0 };
-        }
+        if (!statsByColor[p.color]) statsByColor[p.color] = { count: 0, area: 0 };
         statsByColor[p.color].count++;
         statsByColor[p.color].area += area;
     });
@@ -186,7 +340,6 @@ function showCadastreStats() {
         let s = statsByColor[color];
         let sHa = (s.area / 10000).toFixed(2);
         let sM2 = Math.round(s.area);
-        
         html += `
             <div class="cadastre-stat-row">
                 <div style="display:flex; align-items:center;">
@@ -211,33 +364,12 @@ function closeCadastreStats() { document.getElementById('modal-cadastre-stats').
 
 
 // ============================================================
-// --- GESTION SMART FOLLOW (SUIVI CARTE) ---
-// ============================================================
-
-map.on('dragstart', function() {
-    if (isTracking && isAutoCentering) {
-        isAutoCentering = false; 
-        document.getElementById('btn-recenter').classList.remove('hidden'); 
-    }
-});
-
-function enableAutoCenter() {
-    isAutoCentering = true;
-    document.getElementById('btn-recenter').classList.add('hidden');
-    if (userMarker) {
-        map.setView(userMarker.getLatLng());
-    }
-}
-
-
-// ============================================================
-// --- GESTION DU CADASTRE (SELECTION & COLORIAGE) ---
+// --- 6. GESTION DU CADASTRE (UI) ---
 // ============================================================
 
 function toggleCadastreMode() {
     isCadastreMode = document.getElementById('cadastre-mode-toggle').checked;
     const isParcelsOn = document.getElementById('show-parcels-toggle').checked;
-    
     toggleOpacitySlider(isCadastreMode || isParcelsOn);
 
     if(isCadastreMode) {
@@ -299,23 +431,59 @@ function fetchParcelAt(latlng) {
 
 function openParcelModal(parcelGeoJSON) {
     currentParcelGeoJSON = parcelGeoJSON;
-    document.getElementById('parcel-ref').textContent = "Ref: " + (parcelGeoJSON.properties.section + " " + parcelGeoJSON.properties.numero);
+    const refText = "Ref: " + (parcelGeoJSON.properties.section + " " + parcelGeoJSON.properties.numero);
+    document.getElementById('parcel-ref').textContent = refText;
+
+    let area = 0;
+    try {
+        if (parcelGeoJSON.properties.contenance) {
+            area = parseInt(parcelGeoJSON.properties.contenance);
+        } else {
+            area = calculateGeoJSONArea(parcelGeoJSON.geometry);
+        }
+    } catch (e) { area = 0; }
+
+    const areaEl = document.getElementById('parcel-area');
+    if (areaEl) {
+        if (area > 0) {
+            let areaHa = (area / 10000).toFixed(4);
+            let areaM2 = Math.round(area);
+            areaEl.innerHTML = `<span style="font-size:18px; color:#27ae60; font-weight:800;">${areaHa} ha</span><br><span style="font-size:13px; color:#7f8c8d;">(${areaM2} m²)</span>`;
+        } else {
+            areaEl.innerHTML = `<span style="color:#e74c3c;">Surface non disponible</span>`;
+        }
+    }
+
     document.getElementById('parcel-note').value = "";
     document.getElementById('modal-parcel').classList.remove('hidden');
-    toggleMenu(); 
+    document.getElementById('menu-items').classList.add('hidden-mobile');
 }
+
 function closeParcelModal() { document.getElementById('modal-parcel').classList.add('hidden'); currentParcelGeoJSON = null; }
 function selectColor(color, element) { selectedParcelColor = color; document.querySelectorAll('.color-option').forEach(el => el.classList.remove('selected')); element.classList.add('selected'); }
 
-function confirmSaveParcel() {
+async function confirmSaveParcel() {
     if (!currentParcelGeoJSON) return;
     const note = document.getElementById('parcel-note').value;
-    savedParcels.push({ id: Date.now(), geoJSON: currentParcelGeoJSON, color: selectedParcelColor, note: note });
-    saveToLocalStorage(); displayParcels(); 
+    
+    const newParcel = { 
+        id: Date.now(), 
+        geoJSON: currentParcelGeoJSON, 
+        color: selectedParcelColor, 
+        note: note 
+    };
+    
+    // Sauvegarde DB
+    await saveToDB('parcels', newParcel);
+    savedParcels.push(newParcel);
+    
+    displayParcels(); 
+    
     if (!document.getElementById('show-parcels-toggle').checked) {
         document.getElementById('show-parcels-toggle').checked = true;
         toggleSavedParcels(); 
     }
+    
     closeParcelModal();
     showToast("🏠 Parcelle coloriée !");
     triggerHaptic('success');
@@ -327,21 +495,41 @@ function displayParcels() {
         L.geoJSON(p.geoJSON, {
             style: { color: '#333', weight: 1, fillColor: p.color, fillOpacity: 0.6 },
             onEachFeature: function(f, l) {
-                l.bindPopup(`<div style="text-align:center;"><b>${p.note || "Sans nom"}</b><br><small>Ref: ${f.properties.section} ${f.properties.numero}</small><br><button onclick="deleteParcel(${p.id})" style="background:#e74c3c; color:white; border:none; border-radius:4px; margin-top:5px; padding:4px 8px;">Supprimer</button></div>`);
+                let area = 0;
+                if(f.properties.contenance) area = parseInt(f.properties.contenance);
+                else area = calculateGeoJSONArea(f.geometry);
+                
+                let areaHa = (area / 10000).toFixed(4);
+                let areaM2 = Math.round(area);
+
+                l.bindPopup(`
+                    <div style="text-align:center;">
+                        <b>${p.note || "Sans nom"}</b><br>
+                        <span style="color:#27ae60; font-weight:800;">${areaHa} ha</span> <small style="color:#7f8c8d;">(${areaM2} m²)</small><br>
+                        <small style="color:#333;">Ref: ${f.properties.section} ${f.properties.numero}</small><br>
+                        <button onclick="deleteParcel(${p.id})" style="background:#e74c3c; color:white; border:none; border-radius:4px; margin-top:8px; padding:4px 8px; cursor:pointer;">Supprimer</button>
+                    </div>
+                `);
             }
         }).addTo(parcelsLayer);
     });
 }
-function deleteParcel(id) {
+
+async function deleteParcel(id) {
     if(confirm("Supprimer ce coloriage ?")) {
+        await deleteFromDB('parcels', id);
         savedParcels = savedParcels.filter(p => p.id !== id);
-        saveToLocalStorage(); displayParcels();
+        displayParcels();
         triggerHaptic('warning');
     }
 }
-function clearParcels() {
+
+async function clearParcels() {
     if(confirm("Tout effacer les parcelles ?")) {
-        savedParcels = []; saveToLocalStorage(); displayParcels(); toggleMenu();
+        await clearStoreDB('parcels');
+        savedParcels = [];
+        displayParcels(); 
+        toggleMenu();
         showToast("🗑️ Parcelles effacées");
         triggerHaptic('warning');
     }
@@ -349,10 +537,28 @@ function clearParcels() {
 
 
 // ============================================================
-// --- TRACEUR GPS & ENREGISTREMENT ---
+// --- 7. TRACEUR GPS & ENREGISTREMENT ---
 // ============================================================
 
-function toggleMenu() { document.getElementById('menu-items').classList.toggle('hidden-mobile'); }
+map.on('dragstart', function() {
+    if (isTracking && isAutoCentering) {
+        isAutoCentering = false; 
+        document.getElementById('btn-recenter').classList.remove('hidden'); 
+    }
+});
+
+function enableAutoCenter() {
+    isAutoCentering = true;
+    document.getElementById('btn-recenter').classList.add('hidden');
+    if (userMarker) {
+        map.setView(userMarker.getLatLng());
+    }
+}
+
+function toggleMenu() { 
+    checkStorageUsage();
+    document.getElementById('menu-items').classList.toggle('hidden-mobile'); 
+}
 
 async function toggleTracking() {
     const btn = document.getElementById('btn-tracking');
@@ -368,7 +574,10 @@ async function toggleTracking() {
         currentPath = []; currentDistance = 0; currentStartTime = new Date();
         btn.innerHTML = "⏹️ Arrêter REC"; btn.className = "btn-stop-track"; 
         container.classList.remove('hidden'); dashboard.classList.remove('hidden'); 
-        startTimer(); await requestWakeLock();
+        
+        startTimer(); 
+        await requestWakeLock();
+        
         currentPolyline = L.polyline([], {color: 'red', weight: 5}).addTo(map);
         if (navigator.geolocation) trackWatchId = navigator.geolocation.watchPosition(updateTrackingPosition, null, {enableHighAccuracy:true});
         toggleMenu();
@@ -379,16 +588,18 @@ async function toggleTracking() {
         isTracking = false; 
         document.getElementById('btn-recenter').classList.add('hidden'); 
         
-        navigator.geolocation.clearWatch(trackWatchId); stopTimer(); await releaseWakeLock();
+        navigator.geolocation.clearWatch(trackWatchId); 
+        stopTimer(); 
+        await releaseWakeLock();
+        localStorage.removeItem('begole_temp_track'); // Nettoyage Temp
+
         btn.innerHTML = "▶️ Démarrer Trajet"; btn.className = "btn-start-track"; 
         container.classList.add('hidden'); dashboard.classList.add('hidden'); 
 
         if (currentPath.length > 0) {
             const endTime = new Date();
-            // Calcul du Dénivelé
             const elevationStats = calculateElevation(currentPath);
-            
-            saveTrip(currentPath, currentStartTime, endTime, currentDistance, elevationStats);
+            await saveTrip(currentPath, currentStartTime, endTime, currentDistance, elevationStats);
             alert(`Trajet terminé !\nDistance : ${currentDistance.toFixed(2)} km\nDénivelé + : ${elevationStats.gain} m\nDurée : ${formatDuration(endTime - currentStartTime)}`);
             triggerHaptic('stop');
         }
@@ -396,7 +607,6 @@ async function toggleTracking() {
     }
 }
 
-// Mise à jour position pendant le tracking (avec Altitude)
 function updateTrackingPosition(pos) {
     const newLatLng = [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0];
     
@@ -410,7 +620,45 @@ function updateTrackingPosition(pos) {
     }
     updateUserMarker(newLatLng[0], newLatLng[1], pos.coords.accuracy, pos.coords.heading);
     currentPath.push(newLatLng); 
-    currentPolyline.setLatLngs(currentPath); 
+    currentPolyline.setLatLngs(currentPath);
+
+    // Temp Track (Anti-Crash)
+    localStorage.setItem('begole_temp_track', JSON.stringify({
+        path: currentPath,
+        startTime: currentStartTime,
+        distance: currentDistance
+    }));
+}
+
+function checkCrashRecovery() {
+    const tempTrack = JSON.parse(localStorage.getItem('begole_temp_track'));
+    if (tempTrack && tempTrack.path && tempTrack.path.length > 0) {
+        if(confirm("⚠️ Tracé interrompu détecté !\nVoulez-vous le reprendre ?")) {
+            currentPath = tempTrack.path;
+            currentStartTime = new Date(tempTrack.startTime);
+            currentDistance = tempTrack.distance;
+            
+            isTracking = true;
+            isAutoCentering = true;
+            document.getElementById('btn-recenter').classList.add('hidden');
+            const btn = document.getElementById('btn-tracking');
+            btn.innerHTML = "⏹️ Arrêter REC"; 
+            btn.className = "btn-stop-track"; 
+            document.getElementById('recording-container').classList.remove('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+
+            currentPolyline = L.polyline(currentPath, {color: 'red', weight: 5}).addTo(map);
+            
+            startTimer();
+            requestWakeLock();
+            if (navigator.geolocation) {
+                trackWatchId = navigator.geolocation.watchPosition(updateTrackingPosition, null, {enableHighAccuracy:true});
+            }
+            showToast("✅ Tracé récupéré !");
+        } else {
+            localStorage.removeItem('begole_temp_track');
+        }
+    }
 }
 
 function updateDashboard(alt, speedMs, distKm) {
@@ -427,19 +675,15 @@ function startTimer() {
 }
 function stopTimer() { clearInterval(timerInterval); document.getElementById('recording-timer').innerText = "00:00"; }
 
-// Algorithme de calcul du Dénivelé (Filtre anti-bruit 5m)
 function calculateElevation(points) {
     let gain = 0;
     let loss = 0;
     if (!points || points.length < 2) return { gain: 0, loss: 0 };
-
-    let lastAlt = points[0][2]; // 3ème coordonnée = altitude
-
+    let lastAlt = points[0][2]; 
     for (let i = 1; i < points.length; i++) {
         let currAlt = points[i][2];
         if (currAlt !== undefined && currAlt !== null && lastAlt !== undefined && lastAlt !== null) {
             let diff = currAlt - lastAlt;
-            
             if (Math.abs(diff) > 5) {
                 if (diff > 0) gain += diff;
                 else loss += Math.abs(diff);
@@ -450,11 +694,11 @@ function calculateElevation(points) {
     return { gain: Math.round(gain), loss: Math.round(loss) };
 }
 
-function saveTrip(path, start, end, distKm, elevationStats) {
+async function saveTrip(path, start, end, distKm, elevationStats) {
     const dur = end - start;
     const avgSpeed = (dur > 0 && distKm > 0) ? distKm / (dur / 3600000) : 0;
     
-    savedTrips.push({ 
+    const newTrip = { 
         id: Date.now(), 
         date: start.toISOString(), 
         duration: dur, 
@@ -464,13 +708,15 @@ function saveTrip(path, start, end, distKm, elevationStats) {
         note: "",
         elevationGain: elevationStats ? elevationStats.gain : 0, 
         elevationLoss: elevationStats ? elevationStats.loss : 0 
-    });
-    localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
+    };
+    
+    await saveToDB('trips', newTrip);
+    savedTrips.push(newTrip);
 }
 
 
 // ============================================================
-// --- HISTORIQUE TRAJETS & AFFICHAGE ---
+// --- 8. HISTORIQUE TRAJETS & AFFICHAGE ---
 // ============================================================
 
 function openHistory() { renderHistoryList(); document.getElementById('history-overlay').classList.remove('hidden'); toggleMenu(); }
@@ -561,10 +807,10 @@ function showAllTrips() {
     showToast("🌈 Trajets colorés par distance !");
 }
 
-function deleteTrip(id) { 
+async function deleteTrip(id) { 
     if(confirm("Supprimer ce trajet ?")) { 
-        savedTrips=savedTrips.filter(t=>t.id!==id); 
-        localStorage.setItem('begole_gps_trips',JSON.stringify(savedTrips)); 
+        await deleteFromDB('trips', id);
+        savedTrips = savedTrips.filter(t=>t.id!==id); 
         renderHistoryList(); clearMapLayers(); 
         triggerHaptic('warning');
     } 
@@ -584,13 +830,13 @@ function closeEditTripModal() {
     currentEditingTripId = null;
 }
 
-function confirmSaveTripNote() {
+async function confirmSaveTripNote() {
     if (currentEditingTripId) {
         const note = document.getElementById('edit-trip-note').value;
         const tripIndex = savedTrips.findIndex(t => t.id === currentEditingTripId);
         if (tripIndex > -1) {
             savedTrips[tripIndex].note = note;
-            localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
+            await saveToDB('trips', savedTrips[tripIndex]);
             renderHistoryList();
             closeEditTripModal();
             showToast("Note enregistrée ! 📝");
@@ -609,27 +855,31 @@ function clearMapLayers() {
 
 
 // ============================================================
-// --- GESTION POINTS, NOTES & FILTRES ---
+// --- 9. GESTION POINTS, PHOTOS & CARNET ---
 // ============================================================
 
 function openModal() { document.getElementById('modal-overlay').classList.remove('hidden'); }
 function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
 
-function confirmAddPoint() {
+async function confirmAddPoint() {
     const emoji = document.getElementById('input-emoji').value || "📍";
     const note = document.getElementById('input-note').value;
     
-    savedPoints.push({ 
+    const newPoint = { 
+        id: Date.now(),
         lat: tempLatLng.lat, 
         lng: tempLatLng.lng, 
         note: note, 
         emoji: emoji, 
         date: new Date().toLocaleDateString(),
         history: [] 
-    });
+    };
+    
+    await saveToDB('points', newPoint);
+    savedPoints.push(newPoint);
     
     updateYearFilterOptions();
-    saveToLocalStorage(); refreshMap(); closeModal();
+    refreshMap(); closeModal();
     showToast("📍 Point ajouté !");
     triggerHaptic('success');
 }
@@ -698,6 +948,67 @@ function openEditModal(index) {
     map.closePopup(); 
 }
 
+// Visionneuse (Lightbox)
+function viewFullImage(src) {
+    const overlay = document.getElementById('lightbox-overlay');
+    const img = document.getElementById('lightbox-img');
+    if(overlay && img) {
+        img.src = src;
+        overlay.classList.remove('hidden');
+    }
+}
+function closeLightbox() {
+    const overlay = document.getElementById('lightbox-overlay');
+    if(overlay) {
+        overlay.classList.add('hidden');
+        setTimeout(() => { document.getElementById('lightbox-img').src = ""; }, 300);
+    }
+}
+
+// Compression Image
+function compressImage(file, maxWidth, quality) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = event => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxWidth) {
+                    height *= maxWidth / width;
+                    width = maxWidth;
+                }
+                canvas.width = width;
+                canvas.height = height;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = error => reject(error);
+        };
+        reader.onerror = error => reject(error);
+    });
+}
+
+function previewPhotoCount() {
+    const input = document.getElementById('history-photo-input');
+    const status = document.getElementById('photo-status');
+    const label = document.querySelector('.btn-photo-label');
+    
+    if(input.files && input.files[0]) {
+        status.style.display = 'block';
+        label.style.backgroundColor = '#2ecc71'; 
+    } else {
+        status.style.display = 'none';
+        label.style.backgroundColor = '#bdc3c7'; 
+    }
+}
+
 function renderPointHistory(history) {
     const container = document.getElementById('history-list-container');
     container.innerHTML = "";
@@ -709,39 +1020,73 @@ function renderPointHistory(history) {
         const entry = history[i];
         const div = document.createElement('div');
         div.className = 'history-item';
-        div.innerHTML = `<div style="flex:1;"><span>${entry.date} :</span> ${entry.text}</div><button class="btn-history-delete-row" onclick="deleteHistoryEntry(${i})">🗑️</button>`;
+        
+        let imgHtml = "";
+        if (entry.photo) {
+            // Clic sur l'image = Lightbox
+            imgHtml = `<img src="${entry.photo}" class="history-img-thumb" onclick="viewFullImage(this.src)">`;
+        }
+
+        div.innerHTML = `
+            <div class="history-header">
+                <div><span>${entry.date} :</span> ${entry.text}</div>
+                <button class="btn-history-delete-row" onclick="deleteHistoryEntry(${i})">🗑️</button>
+            </div>
+            ${imgHtml}
+        `;
         container.appendChild(div);
     }
 }
 
-function deleteHistoryEntry(historyIndex) {
+async function deleteHistoryEntry(historyIndex) {
     if(confirm("Effacer cette ligne du carnet ?")) {
         savedPoints[currentEditingIndex].history.splice(historyIndex, 1);
-        saveToLocalStorage();
+        await saveToDB('points', savedPoints[currentEditingIndex]);
         renderPointHistory(savedPoints[currentEditingIndex].history);
         triggerHaptic('warning');
     }
 }
 
-function addHistoryToCurrentPoint() {
-    const text = document.getElementById('new-history-entry').value.trim();
-    if (!text) return;
+async function addHistoryToCurrentPoint() {
+    const textInput = document.getElementById('new-history-entry');
+    const photoInput = document.getElementById('history-photo-input');
+    const text = textInput.value.trim();
+    
+    if (!text && (!photoInput.files || photoInput.files.length === 0)) return;
+
     if (currentEditingIndex > -1) {
         const now = new Date();
         const dateStr = now.toLocaleDateString() + " " + now.toLocaleTimeString().slice(0,5);
-        savedPoints[currentEditingIndex].history.push({ date: dateStr, text: text });
-        saveToLocalStorage();
+        let newEntry = { date: dateStr, text: text, photo: null };
+
+        if (photoInput.files && photoInput.files[0]) {
+            showToast("📸 Traitement photo...");
+            try {
+                const compressedDataUrl = await compressImage(photoInput.files[0], 800, 0.7);
+                newEntry.photo = compressedDataUrl;
+            } catch (e) {
+                console.error("Erreur photo", e);
+                showToast("❌ Erreur image");
+            }
+        }
+
+        savedPoints[currentEditingIndex].history.push(newEntry);
+        await saveToDB('points', savedPoints[currentEditingIndex]);
         renderPointHistory(savedPoints[currentEditingIndex].history);
-        document.getElementById('new-history-entry').value = ""; 
+        textInput.value = ""; 
+        photoInput.value = ""; 
+        previewPhotoCount(); 
         triggerHaptic('success');
+        showToast("Entrée ajoutée !");
     }
 }
 
-function savePointEdits() {
+async function savePointEdits() {
     if (currentEditingIndex > -1) {
         savedPoints[currentEditingIndex].emoji = document.getElementById('edit-emoji').value;
         savedPoints[currentEditingIndex].note = document.getElementById('edit-note').value;
-        saveToLocalStorage(); refreshMap(); 
+        await saveToDB('points', savedPoints[currentEditingIndex]);
+        refreshMap(); 
         document.getElementById('modal-edit-point').classList.add('hidden');
         showToast("✅ Point mis à jour");
     }
@@ -751,8 +1096,11 @@ function deleteCurrentPoint() {
     if (currentEditingIndex > -1) { deletePoint(currentEditingIndex); document.getElementById('modal-edit-point').classList.add('hidden'); }
 }
 
-function deletePoint(i) { 
-    savedPoints.splice(i,1); saveToLocalStorage(); refreshMap(); 
+async function deletePoint(i) { 
+    const p = savedPoints[i];
+    await deleteFromDB('points', p.id);
+    savedPoints.splice(i,1); 
+    refreshMap(); 
     showToast("Point supprimé");
     triggerHaptic('warning');
     updateYearFilterOptions(); 
@@ -773,26 +1121,35 @@ function showToast(message, duration = 3000) {
     }, duration);
 }
 
+// GESTION DES VIBRATIONS (HAPTIC)
 function triggerHaptic(type) {
+    // Vérification de sécurité
     if (!navigator.vibrate) return;
-    switch (type) {
-        case 'success': navigator.vibrate(50); break; 
-        case 'warning': navigator.vibrate([50, 50, 50]); break; 
-        case 'error': navigator.vibrate([100, 50, 100, 50, 100]); break; 
-        case 'start': navigator.vibrate(200); break; 
-        case 'stop': navigator.vibrate([200, 100, 200]); break; 
-        default: navigator.vibrate(50);
+    
+    // Patterns de vibration optimisés
+    try {
+        switch (type) {
+            case 'success': navigator.vibrate(50); break; 
+            case 'warning': navigator.vibrate([50, 50, 50]); break; 
+            case 'error': navigator.vibrate([100, 50, 100, 50, 100]); break; 
+            case 'start': navigator.vibrate(200); break; 
+            case 'stop': navigator.vibrate([200, 100, 200]); break; 
+            default: navigator.vibrate(50);
+        }
+    } catch(e) {
+        console.log("Erreur vibration:", e);
     }
 }
 
-function saveToLocalStorage() { localStorage.setItem('myMapPoints', JSON.stringify(savedPoints)); localStorage.setItem('myMapParcels', JSON.stringify(savedParcels)); }
-function loadFromLocalStorage() { 
-    savedPoints = JSON.parse(localStorage.getItem('myMapPoints')) || []; 
-    savedParcels = JSON.parse(localStorage.getItem('myMapParcels')) || []; 
-    updateYearFilterOptions(); refreshMap(); displayParcels(); 
+async function clearData() { 
+    if(confirm("TOUT SUPPRIMER ? (Irréversible)")) { 
+        await clearStoreDB('points');
+        await clearStoreDB('parcels');
+        await clearStoreDB('trips');
+        location.reload(); 
+        triggerHaptic('error'); 
+    } 
 }
-
-function clearData() { if(confirm("TOUT SUPPRIMER ? (Irréversible)")) { localStorage.clear(); location.reload(); triggerHaptic('error'); } }
 
 function exportData() {
     const data = { points: savedPoints, trips: savedTrips, parcels: savedParcels };
@@ -809,14 +1166,21 @@ function exportData() {
 
 function importData(input) {
     const fr = new FileReader();
-    fr.onload = e => {
+    fr.onload = async e => {
         const d = JSON.parse(e.target.result);
-        if(d.points) savedPoints = d.points;
-        if(d.trips) savedTrips = d.trips;
-        if(d.parcels) savedParcels = d.parcels; 
-        localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
-        saveToLocalStorage();
-        location.reload();
+        if(d.points) {
+            for (let p of d.points) {
+                if(!p.id) p.id = Date.now() + Math.random();
+                await saveToDB('points', p);
+            }
+        }
+        if(d.trips) {
+            for (let t of d.trips) { await saveToDB('trips', t); }
+        }
+        if(d.parcels) {
+            for (let p of d.parcels) { await saveToDB('parcels', p); }
+        }
+        location.reload(); 
     };
     fr.readAsText(input.files[0]);
 }
@@ -868,7 +1232,7 @@ function resetFilter() {
 }
 
 // ============================================================
-// --- STATS GLOBALES (4 BLOCS) ---
+// --- 10. STATS GLOBALES (4 BLOCS & TRI) ---
 // ============================================================
 function showStats() {
     const totalTrips = savedTrips.length;
@@ -920,7 +1284,7 @@ function showStats() {
         return { emoji: key, count: stats[key] };
     });
 
-    sortedStats.sort((a, b) => b.count - a.count);
+    sortedStats.sort((a, b) => a.count - b.count);
     
     if(sortedStats.length === 0) {
         html += "<p style='color:#999;font-size:12px;'>Aucun point enregistré.</p>";

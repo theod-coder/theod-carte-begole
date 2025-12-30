@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Bégole Map">
     
-    <link rel="apple-touch-icon" href="logo_v2.png">
+    <link rel="apple-touch-icon" href="logoV2.png">
 
     <title>Bégole Map 🌳</title>
     
@@ -68,7 +68,7 @@
             </div>
 
             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:5px;">
-                <span style="font-size:13px; color:#333; font-weight:bold;">Mode Sélection</span>
+                <span style="font-size:13px; color:#333; ">Ajouter des parcelles</span>
                 <label class="switch">
                   <input type="checkbox" id="cadastre-mode-toggle" onchange="toggleCadastreMode()">
                   <span class="slider round"></span>
@@ -84,13 +84,12 @@
             </div>
 
             <button onclick="showCadastreStats()" style="background-color:#f39c12; font-size:12px; margin-bottom:5px;">📊 Stats Cadastre (Surfaces)</button>
-
             <button onclick="clearParcels()" style="background-color:#d35400; font-size:12px; margin-bottom:10px;">🗑️ Effacer parcelles coloriées</button>
             
             <hr>
 
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-                <span style="font-size:13px; color:#c0392b; font-weight:bold;">🔥 Heatmap</span>
+                <span style="font-size:13px; color:#c0392b; font-weight:bold;">🔥 Heatmap (Zones + Fréquentées)</span>
                 <label class="switch">
                   <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()">
                   <span class="slider round"></span>
@@ -136,7 +135,17 @@
             
             <hr>
             
-            <button onclick="exportData()" class="btn-save">💾 Sauvegarder Tout</button>
+            <div class="storage-container">
+                <div class="storage-header">
+                    <span>💾 Mémoire Téléphone</span>
+                    <span id="storage-text">0%</span>
+                </div>
+                <div class="storage-track">
+                    <div id="storage-bar" class="storage-fill"></div>
+                </div>
+            </div>
+
+            <button onclick="exportData()" class="btn-save" style="margin-top:5px;">💾 Sauvegarder Tout</button>
             <button onclick="document.getElementById('fileInput').click()" class="btn-load">📂 Charger Sauvegarde</button>
             <button onclick="clearData()" class="btn-danger">🗑️ Tout effacer</button>
         </div>
@@ -160,7 +169,8 @@
 
     <div id="modal-edit-point" class="hidden">
         <div class="modal-box">
-            <h3 style="background-color:#3498db;">📝 Carnet & Modif</h3>
+            <h3 style="background-color:#3498db;">📝 Carnet & Modifs</h3>
+            
             <div style="padding: 10px 15px;">
                 <label>Nom / Émoji :</label>
                 <div style="display:flex; gap:5px;">
@@ -168,15 +178,27 @@
                     <input type="text" id="edit-note" style="flex:1;">
                 </div>
             </div>
+
             <label style="margin: 0 15px;">📜 Historique des prises :</label>
             <div id="history-list-container" class="history-list"></div>
-            <div class="history-add-row">
+
+            <div class="history-add-container">
                 <input type="text" id="new-history-entry" placeholder="Ex: 3kg, 5 beaux...">
-                <button onclick="addHistoryToCurrentPoint()">➕</button>
+                
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">
+                    <label for="history-photo-input" class="btn-photo-label">
+                        📷 Photo
+                        <input type="file" id="history-photo-input" accept="image/*" capture="environment" style="display:none" onchange="previewPhotoCount()">
+                    </label>
+                    <span id="photo-status" style="font-size:10px; color:#27ae60; display:none;">Image sélectionnée !</span>
+                    
+                    <button class="btn-add-history" onclick="addHistoryToCurrentPoint()">➕ Ajouter</button>
+                </div>
             </div>
-            <div class="modal-buttons" style="margin-top:0;">
-                <button onclick="deleteCurrentPoint()" class="btn-danger">Supprimer</button>
-                <button onclick="savePointEdits()" class="btn-confirm">Sauver & Fermer</button>
+
+            <div class="modal-buttons" style="margin-top:10px;">
+                <button onclick="deleteCurrentPoint()" class="btn-danger">Supprimer Point</button>
+                <button onclick="savePointEdits()" class="btn-confirm">Fermer</button>
             </div>
         </div>
     </div>
@@ -184,7 +206,10 @@
     <div id="modal-parcel" class="hidden">
         <div class="modal-box">
             <h3 style="background-color:#e67e22;">Parcelle Détectée 🏠</h3>
-            <p id="parcel-ref" style="text-align:center; font-weight:bold; color:#666; margin:10px 0; font-size:14px;">Ref: ...</p>
+            <p id="parcel-ref" style="text-align:center; font-weight:bold; color:#666; margin:10px 0 5px 0; font-size:14px;">Ref: ...</p>
+            
+            <p id="parcel-area" style="text-align:center; margin:0 0 15px 0; line-height:1.2;"></p>
+
             <label>Couleur :</label>
             <div class="color-picker-row">
                 <div class="color-option" style="background:#e74c3c;" onclick="selectColor('#e74c3c', this)"></div>
@@ -207,7 +232,7 @@
         <div class="modal-box">
             <h3 style="background-color:#8e44ad;">✏️ Note du Trajet</h3>
             <label>Note / Météo / Champignons trouvés :</label>
-            <textarea id="edit-trip-note" placeholder="Ex: Promenade dans le brouillard, aucune bête en vue"></textarea>
+            <textarea id="edit-trip-note" placeholder="Ex: Rando sous la pluie, rien trouvé..."></textarea>
             <div class="modal-buttons">
                 <button onclick="closeEditTripModal()" class="btn-cancel">Annuler</button>
                 <button onclick="confirmSaveTripNote()" class="btn-confirm" style="background-color:#8e44ad;">Sauvegarder</button>
@@ -226,8 +251,7 @@
     <div id="modal-cadastre-stats" class="hidden" onclick="closeCadastreStats()">
         <div class="modal-box" onclick="event.stopPropagation()">
             <h3 style="background-color:#f39c12;">🏠 Bilan Foncier</h3>
-            <div id="cadastre-stats-content" style="padding:15px; text-align: left;">
-                </div>
+            <div id="cadastre-stats-content" style="padding:15px; text-align: left;"></div>
             <button onclick="closeCadastreStats()" class="btn-confirm" style="width:100%; margin: 0 0 15px 0;">Fermer</button>
         </div>
     </div>
@@ -243,12 +267,19 @@
                     <option value="orange">🟧 Bonnes marches (5-10km)</option>
                     <option value="red">🟥 Grandes randos (> 10km)</option>
                 </select>
+
                 <button class="btn-load" onclick="showAllTrips()" style="width:100%; font-size:12px; margin-bottom:5px;">👁️ Tout afficher en couleur</button>
                 <button class="btn-cancel" onclick="clearMapLayers()" style="width:100%; font-size:12px;">❌ Effacer les tracés</button>
             </div>
+            
             <div id="tripList" style="overflow-y: auto; flex:1; text-align:left; border-top:1px solid #eee;"></div>
+            
             <button onclick="closeHistory()" class="btn-confirm" style="width:100%; margin-top:15px;">Fermer</button>
         </div>
+    </div>
+
+    <div id="lightbox-overlay" class="hidden" onclick="closeLightbox()">
+        <img id="lightbox-img" src="" alt="Photo en grand">
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
