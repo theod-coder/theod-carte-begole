@@ -87,11 +87,21 @@
             
             <hr>
 
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                <span style="font-size:13px; color:#c0392b; font-weight:bold;">🔥 Heatmap (Zones fréquentes)</span>
+                <label class="switch">
+                  <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()">
+                  <span class="slider round"></span>
+                </label>
+            </div>
+
+            <hr>
+
             <div class="menu-section-filter">
-                <label>📅 Filtrer par Année :</label>
+                <label>📅 Filtrer Points (Année) :</label>
                 <select id="filter-year" onchange="applyYearFilter()" class="year-select">
                     <option value="all">Toutes les années</option>
-                    </select>
+                </select>
 
                 <label style="margin-top:10px;">🔍 Filtrer par émoji :</label>
                 <div class="filter-row">
@@ -119,8 +129,8 @@
             
             <hr>
 
-            <button onclick="showStats()" class="btn-stats">📊 Statistiques Points</button>
-            <button onclick="toggleLocation()" id="btn-loc" class="btn-loc">📍 Ma position (Simple)</button>
+            <button onclick="showStats()" class="btn-stats">📊 Statistiques</button>
+            <button onclick="toggleLocation()" id="btn-loc" class="btn-loc">📍 Ma position</button>
             
             <hr>
             
@@ -138,7 +148,7 @@
             <label>Émoji :</label>
             <input type="text" id="input-emoji" placeholder=" " value="📍" style="font-size: 24px; text-align: center; width: 60px;">
             <label>Description :</label>
-            <textarea id="input-note" placeholder="Ex: Coin à cèpes..."></textarea>
+            <textarea id="input-note" placeholder="Ex: Tanière du renard"></textarea>
             <div class="modal-buttons">
                 <button onclick="closeModal()" class="btn-cancel">Annuler</button>
                 <button onclick="confirmAddPoint()" class="btn-confirm">Valider</button>
@@ -191,6 +201,18 @@
         </div>
     </div>
 
+    <div id="modal-edit-trip" class="hidden">
+        <div class="modal-box">
+            <h3 style="background-color:#8e44ad;">✏️ Note du Trajet</h3>
+            <label>Note / Météo / Champignons trouvés :</label>
+            <textarea id="edit-trip-note" placeholder="Ex: Rando sous la pluie, rien trouvé..."></textarea>
+            <div class="modal-buttons">
+                <button onclick="closeEditTripModal()" class="btn-cancel">Annuler</button>
+                <button onclick="confirmSaveTripNote()" class="btn-confirm" style="background-color:#8e44ad;">Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+
     <div id="stats-overlay" class="hidden" onclick="closeStats()">
         <div class="modal-box" onclick="event.stopPropagation()">
             <h3>📊 Mes Points</h3>
@@ -202,9 +224,16 @@
     <div id="history-overlay" class="hidden" onclick="closeHistory()">
         <div class="modal-box" onclick="event.stopPropagation()" style="max-height: 80vh; display:flex; flex-direction:column;">
             <h3>👣 Mes Trajets</h3>
-            <div style="margin-bottom:10px;">
-                <button class="btn-load" onclick="showAllTrips()" style="width:100%; font-size:12px; margin-bottom:5px;">👁️ Tout afficher en même temps</button>
-                <button class="btn-cancel" onclick="clearMapLayers()" style="width:100%; font-size:12px;">❌ Effacer les tracés de la carte</button>
+            <div style="padding:10px 15px 0 15px;">
+                <select id="filter-trip-class" onchange="renderHistoryList()" class="year-select" style="margin-bottom:5px;">
+                    <option value="all">Tout voir (Toutes distances)</option>
+                    <option value="blue">🟦 Petites balades (< 2km)</option>
+                    <option value="green">🟩 Randos Moyennes (2-5km)</option>
+                    <option value="orange">🟧 Bonnes marches (5-10km)</option>
+                    <option value="red">🟥 Grandes randos (> 10km)</option>
+                </select>
+                <button class="btn-load" onclick="showAllTrips()" style="width:100%; font-size:12px; margin-bottom:5px;">👁️ Tout afficher en couleur</button>
+                <button class="btn-cancel" onclick="clearMapLayers()" style="width:100%; font-size:12px;">❌ Effacer les tracés</button>
             </div>
             <div id="tripList" style="overflow-y: auto; flex:1; text-align:left; border-top:1px solid #eee;"></div>
             <button onclick="closeHistory()" class="btn-confirm" style="width:100%; margin-top:15px;">Fermer</button>
@@ -212,6 +241,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <script src="script.js"></script>
 
 </body>

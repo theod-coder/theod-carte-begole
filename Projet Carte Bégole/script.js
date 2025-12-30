@@ -32,6 +32,7 @@ var savedParcels = [];
 var markersLayer = L.layerGroup().addTo(map);
 var tracksLayer = L.layerGroup().addTo(map);
 var parcelsLayer = L.layerGroup(); 
+var heatLayer = null; 
 
 var isTracking = false; var trackWatchId = null; 
 var currentPath = []; var currentStartTime = null; 
@@ -43,7 +44,7 @@ var wakeLock = null;
 // Variables Filtres
 var currentFilterEmoji = null; 
 var currentFilterText = null;
-var currentFilterYear = 'all'; // Par défaut : toutes les années
+var currentFilterYear = 'all'; 
 
 // Variables Gestion
 var isAutoCentering = true; 
@@ -52,11 +53,50 @@ var currentParcelGeoJSON = null;
 var selectedParcelColor = '#95a5a6'; 
 var tempLatLng = null;
 var currentEditingIndex = -1;
+var currentEditingTripId = null;
 
 loadFromLocalStorage();
 
 // ============================================================
-// --- LOGIQUE SMART FOLLOW (SUIVI INTELLIGENT) ---
+// --- LOGIQUE HEATMAP ---
+// ============================================================
+
+function toggleHeatmap() {
+    const isChecked = document.getElementById('heatmap-toggle').checked;
+
+    if (isChecked) {
+        let heatPoints = [];
+        savedTrips.forEach(trip => {
+            trip.points.forEach(pt => {
+                heatPoints.push([pt[0], pt[1], 0.5]); 
+            });
+        });
+
+        if(heatPoints.length === 0) {
+            showToast("⚠️ Pas assez de données de trajet");
+            document.getElementById('heatmap-toggle').checked = false;
+            return;
+        }
+
+        if(heatLayer) map.removeLayer(heatLayer);
+        
+        if (L.heatLayer) {
+            heatLayer = L.heatLayer(heatPoints, { radius: 20, blur: 15, maxZoom: 17 }).addTo(map);
+            showToast("🔥 Heatmap activée");
+            toggleMenu();
+        } else {
+            showToast("❌ Erreur chargement librairie Heatmap");
+        }
+
+    } else {
+        if(heatLayer) map.removeLayer(heatLayer);
+        showToast("Heatmap désactivée");
+    }
+}
+
+
+// ============================================================
+// --- LOGIQUE SMART FOLLOW ---
 // ============================================================
 
 map.on('dragstart', function() {
@@ -260,24 +300,35 @@ async function toggleTracking() {
 
         if (currentPath.length > 0) {
             const endTime = new Date();
-            saveTrip(currentPath, currentStartTime, endTime, currentDistance);
-            alert(`Trajet terminé !\nDistance : ${currentDistance.toFixed(2)} km\nDurée : ${formatDuration(endTime - currentStartTime)}`);
+            // CALCUL DU DENIVELÉ
+            const elevationStats = calculateElevation(currentPath);
+            
+            saveTrip(currentPath, currentStartTime, endTime, currentDistance, elevationStats);
+            alert(`Trajet terminé !\nDistance : ${currentDistance.toFixed(2)} km\nDénivelé + : ${elevationStats.gain} m\nDurée : ${formatDuration(endTime - currentStartTime)}`);
             triggerHaptic('stop');
         }
         if (currentPolyline) map.removeLayer(currentPolyline);
     }
 }
 
+// MISE A JOUR POSITION (Avec Altitude)
 function updateTrackingPosition(pos) {
-    const newLatLng = [pos.coords.latitude, pos.coords.longitude];
-    if (currentPath.length > 0) currentDistance += (map.distance(currentPath[currentPath.length - 1], newLatLng) / 1000);
+    // On ajoute l'altitude (ou 0 si inconnue) en 3ème paramètre
+    const newLatLng = [pos.coords.latitude, pos.coords.longitude, pos.coords.altitude || 0];
+    
+    if (currentPath.length > 0) {
+        // Pour la distance on ne prend que lat/lng (Leaflet gère ça)
+        currentDistance += (map.distance([currentPath[currentPath.length - 1][0], currentPath[currentPath.length - 1][1]], [newLatLng[0], newLatLng[1]]) / 1000);
+    }
     updateDashboard(pos.coords.altitude, pos.coords.speed, currentDistance);
     
     if (isAutoCentering) {
-        map.setView(newLatLng);
+        map.setView([newLatLng[0], newLatLng[1]]);
     }
     updateUserMarker(newLatLng[0], newLatLng[1], pos.coords.accuracy, pos.coords.heading);
-    currentPath.push(newLatLng); currentPolyline.setLatLngs(currentPath); 
+    currentPath.push(newLatLng); 
+    // Pour la polyline, Leaflet ignore la 3eme coordonnée automatiquement, pas de souci
+    currentPolyline.setLatLngs(currentPath); 
 }
 
 function updateDashboard(alt, speedMs, distKm) {
@@ -294,33 +345,96 @@ function startTimer() {
 }
 function stopTimer() { clearInterval(timerInterval); document.getElementById('recording-timer').innerText = "00:00"; }
 
-function saveTrip(path, start, end, distKm) {
+// CALCULATEUR DE DÉNIVELÉ (Avec seuil de 5m pour éviter le bruit GPS)
+function calculateElevation(points) {
+    let gain = 0;
+    let loss = 0;
+    if (!points || points.length < 2) return { gain: 0, loss: 0 };
+
+    let lastAlt = points[0][2]; // 3ème coordonnée = altitude
+
+    for (let i = 1; i < points.length; i++) {
+        let currAlt = points[i][2];
+        // On vérifie que l'altitude n'est pas nulle (ou bugguée)
+        if (currAlt !== undefined && currAlt !== null && lastAlt !== undefined && lastAlt !== null) {
+            let diff = currAlt - lastAlt;
+            
+            // FILTRE : On ignore les variations < 5 mètres (bruit GPS)
+            if (Math.abs(diff) > 5) {
+                if (diff > 0) gain += diff;
+                else loss += Math.abs(diff);
+                lastAlt = currAlt; // On met à jour l'altitude de référence
+            }
+        }
+    }
+    return { gain: Math.round(gain), loss: Math.round(loss) };
+}
+
+function saveTrip(path, start, end, distKm, elevationStats) {
     const dur = end - start;
     const avgSpeed = (dur > 0 && distKm > 0) ? distKm / (dur / 3600000) : 0;
-    savedTrips.push({ id: Date.now(), date: start.toISOString(), duration: dur, distance: distKm, avgSpeed: avgSpeed, points: path });
+    
+    savedTrips.push({ 
+        id: Date.now(), 
+        date: start.toISOString(), 
+        duration: dur, 
+        distance: distKm, 
+        avgSpeed: avgSpeed, 
+        points: path, 
+        note: "",
+        elevationGain: elevationStats ? elevationStats.gain : 0, // D+
+        elevationLoss: elevationStats ? elevationStats.loss : 0  // D-
+    });
     localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
 }
 
-// --- HISTORIQUE TRAJETS ---
+// --- HISTORIQUE TRAJETS & FILTRES DISTANCE ---
 function openHistory() { renderHistoryList(); document.getElementById('history-overlay').classList.remove('hidden'); toggleMenu(); }
 function closeHistory() { document.getElementById('history-overlay').classList.add('hidden'); }
 
 function renderHistoryList() {
     const div = document.getElementById('tripList'); div.innerHTML = "";
+    const filterDist = document.getElementById('filter-trip-class').value;
+
     savedTrips.sort((a,b)=>new Date(b.date)-new Date(a.date)).forEach(trip => {
-        const d = new Date(trip.date);
-        const distStr = trip.distance ? `${trip.distance.toFixed(2)} km` : "";
-        const speedStr = trip.avgSpeed ? `${trip.avgSpeed.toFixed(1)} km/h` : "";
-        
-        div.innerHTML += `
-            <div class="trip-item" onclick="showSingleTrip(${trip.id})">
-                <div style="flex-grow:1;">
-                    <span class="trip-date">${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0,5)}</span>
-                    <span class="trip-info">📏 ${distStr} ⏱️ ${formatDuration(trip.duration)} 🚀 ${speedStr}</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;"><button class="btn-delete-trip" onclick="deleteTrip(${trip.id}, event)">🗑️</button><div class="trip-action-icon">👁️</div></div>
-            </div>`;
+        const dKm = trip.distance;
+        let isVisible = true;
+        if(filterDist === 'blue' && dKm >= 2) isVisible = false;
+        if(filterDist === 'green' && (dKm < 2 || dKm >= 5)) isVisible = false;
+        if(filterDist === 'orange' && (dKm < 5 || dKm >= 10)) isVisible = false;
+        if(filterDist === 'red' && dKm < 10) isVisible = false;
+
+        if(isVisible) {
+            const d = new Date(trip.date);
+            const distStr = trip.distance ? `${trip.distance.toFixed(2)} km` : "";
+            const durStr = trip.duration ? formatDuration(trip.duration) : "";
+            // Affichage du D+
+            const elevStr = trip.elevationGain ? `🏔️ +${trip.elevationGain}m` : ""; 
+            const noteDisplay = trip.note ? `<br><small style="color:#e67e22;">📝 ${trip.note}</small>` : "";
+
+            let dotColor = '#e74c3c';
+            if (dKm < 2) dotColor = '#3498db';
+            else if (dKm < 5) dotColor = '#2ecc71';
+            else if (dKm < 10) dotColor = '#f39c12';
+
+            div.innerHTML += `
+                <div class="trip-item">
+                    <div style="flex-grow:1; cursor:pointer;" onclick="showSingleTrip(${trip.id})">
+                        <span class="trip-date" style="border-left: 4px solid ${dotColor}; padding-left:5px;">
+                            ${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0,5)}
+                        </span>
+                        <span class="trip-info">📏 ${distStr} ⏱️ ${durStr} ${elevStr}</span>
+                        ${noteDisplay}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:5px;">
+                        <button class="btn-delete-trip" style="background:#8e44ad;" onclick="openEditTripModal(${trip.id})">✏️</button>
+                        <button class="btn-delete-trip" onclick="deleteTrip(${trip.id})">🗑️</button>
+                    </div>
+                </div>`;
+        }
     });
+    
+    if(div.innerHTML === "") div.innerHTML = "<div style='text-align:center;padding:20px;color:#999;'>Aucun trajet trouvé pour ce filtre.</div>";
 }
 
 function formatDuration(ms) {
@@ -338,19 +452,33 @@ function showSingleTrip(id) {
     clearMapLayers(); const trip = savedTrips.find(t=>t.id===id);
     if(trip) { 
         if(map.hasLayer(markersLayer)) map.removeLayer(markersLayer);
+        if(heatLayer) map.removeLayer(heatLayer); 
         L.polyline(trip.points, {color:'#3498db', weight:5}).addTo(tracksLayer); 
         map.fitBounds(L.polyline(trip.points).getBounds()); 
         closeHistory(); 
     }
 }
+
 function showAllTrips() {
     clearMapLayers();
     if(map.hasLayer(markersLayer)) map.removeLayer(markersLayer);
-    savedTrips.forEach(t => L.polyline(t.points, {color:'#2980b9', weight:3, opacity:0.8}).addTo(tracksLayer));
+    if(heatLayer) map.removeLayer(heatLayer);
+    
+    savedTrips.forEach(t => {
+        let color = '#e74c3c'; 
+        if (t.distance < 2) color = '#3498db'; 
+        else if (t.distance < 5) color = '#2ecc71'; 
+        else if (t.distance < 10) color = '#f39c12'; 
+
+        L.polyline(t.points, {color: color, weight: 3, opacity: 0.8})
+         .bindPopup(`<b>Note:</b> ${t.note || "Aucune"}<br>Dist: ${t.distance.toFixed(2)} km<br>D+: ${t.elevationGain||0}m`)
+         .addTo(tracksLayer);
+    });
     closeHistory();
+    showToast("🌈 Trajets colorés par distance !");
 }
-function deleteTrip(id, e) { 
-    e.stopPropagation(); 
+
+function deleteTrip(id) { 
     if(confirm("Supprimer ce trajet ?")) { 
         savedTrips=savedTrips.filter(t=>t.id!==id); 
         localStorage.setItem('begole_gps_trips',JSON.stringify(savedTrips)); 
@@ -358,8 +486,42 @@ function deleteTrip(id, e) {
         triggerHaptic('warning');
     } 
 }
+
+// GESTION DES NOTES DE TRAJET
+function openEditTripModal(id) {
+    const trip = savedTrips.find(t => t.id === id);
+    if (trip) {
+        currentEditingTripId = id;
+        document.getElementById('edit-trip-note').value = trip.note || "";
+        document.getElementById('modal-edit-trip').classList.remove('hidden');
+    }
+}
+
+function closeEditTripModal() {
+    document.getElementById('modal-edit-trip').classList.add('hidden');
+    currentEditingTripId = null;
+}
+
+function confirmSaveTripNote() {
+    if (currentEditingTripId) {
+        const note = document.getElementById('edit-trip-note').value;
+        const tripIndex = savedTrips.findIndex(t => t.id === currentEditingTripId);
+        
+        if (tripIndex > -1) {
+            savedTrips[tripIndex].note = note;
+            localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
+            renderHistoryList();
+            closeEditTripModal();
+            showToast("Note enregistrée ! 📝");
+            triggerHaptic('success');
+        }
+    }
+}
+
+
 function clearMapLayers() { 
     tracksLayer.clearLayers(); 
+    if(heatLayer) map.removeLayer(heatLayer); 
     const isParcelsOn = document.getElementById('show-parcels-toggle').checked;
     const isSelectOn = document.getElementById('cadastre-mode-toggle').checked;
     if(!isParcelsOn && !isSelectOn && !map.hasLayer(markersLayer)) map.addLayer(markersLayer);
@@ -386,9 +548,7 @@ function confirmAddPoint() {
         history: [] 
     });
     
-    // Mise à jour de la liste des années au cas où
     updateYearFilterOptions();
-    
     saveToLocalStorage(); refreshMap(); closeModal();
     showToast("📍 Point ajouté !");
     triggerHaptic('success');
@@ -400,60 +560,42 @@ function confirmAddPoint() {
 
 function updateYearFilterOptions() {
     const select = document.getElementById('filter-year');
-    
-    // On extrait toutes les années des points
     const years = new Set();
     savedPoints.forEach(p => {
         if(p.date) {
-            // p.date format: "DD/MM/YYYY" -> split('/')[2] = YYYY
             const parts = p.date.split('/');
-            if(parts.length === 3) years.add(parts[2]);
+            if(parts.length === 3) {
+                const cleanYear = parts[2].substring(0, 4);
+                if(cleanYear.length === 4) years.add(cleanYear);
+            }
         }
     });
-    
-    // On garde la valeur sélectionnée actuelle
     const currentVal = select.value;
-    
-    // On vide sauf "all"
     select.innerHTML = '<option value="all">Toutes les années</option>';
-    
-    // On trie du plus récent au plus vieux
     const sortedYears = Array.from(years).sort().reverse();
-    
     sortedYears.forEach(year => {
         const option = document.createElement('option');
-        option.value = year;
-        option.textContent = year;
+        option.value = year; option.textContent = year;
         select.appendChild(option);
     });
-    
-    // On remet la sélection si elle existe encore
-    if (sortedYears.includes(currentVal) || currentVal === 'all') {
-        select.value = currentVal;
-    } else {
-        select.value = 'all'; // Reset si l'année a disparu (ex: supression point)
-    }
+    if (sortedYears.includes(currentVal) || currentVal === 'all') select.value = currentVal;
+    else select.value = 'all'; 
 }
 
 function applyYearFilter() {
     currentFilterYear = document.getElementById('filter-year').value;
-    refreshMap();
-    toggleMenu();
+    refreshMap(); toggleMenu();
 }
 
 function refreshMap() {
     markersLayer.clearLayers();
     savedPoints.forEach((p,i) => {
-        // FILTRES
         if (currentFilterEmoji && p.emoji !== currentFilterEmoji) return;
         if (currentFilterText && !p.note.toLowerCase().includes(currentFilterText)) return;
-        
-        // FILTRE ANNEE
         if (currentFilterYear !== 'all') {
-            const pointYear = p.date.split('/')[2];
+            const pointYear = p.date.split('/')[2].substring(0,4);
             if (pointYear !== currentFilterYear) return;
         }
-        
         if (!p.history) p.history = [];
 
         L.marker([p.lat, p.lng], { icon: L.divIcon({className:'emoji-icon', html:p.emoji, iconSize:[30,30]}) })
@@ -472,13 +614,10 @@ function refreshMap() {
 function openEditModal(index) {
     currentEditingIndex = index;
     const p = savedPoints[index];
-    
     document.getElementById('edit-emoji').value = p.emoji;
     document.getElementById('edit-note').value = p.note;
     document.getElementById('new-history-entry').value = ""; 
-    
     renderPointHistory(p.history);
-    
     document.getElementById('modal-edit-point').classList.remove('hidden');
     map.closePopup(); 
 }
@@ -486,20 +625,15 @@ function openEditModal(index) {
 function renderPointHistory(history) {
     const container = document.getElementById('history-list-container');
     container.innerHTML = "";
-    
     if (!history || history.length === 0) {
         container.innerHTML = "<div style='text-align:center;color:#999;padding:10px;'>Carnet vide.</div>";
         return;
     }
-
     for (let i = history.length - 1; i >= 0; i--) {
         const entry = history[i];
         const div = document.createElement('div');
         div.className = 'history-item';
-        div.innerHTML = `
-            <div style="flex:1;"><span>${entry.date} :</span> ${entry.text}</div>
-            <button class="btn-history-delete-row" onclick="deleteHistoryEntry(${i})">🗑️</button>
-        `;
+        div.innerHTML = `<div style="flex:1;"><span>${entry.date} :</span> ${entry.text}</div><button class="btn-history-delete-row" onclick="deleteHistoryEntry(${i})">🗑️</button>`;
         container.appendChild(div);
     }
 }
@@ -516,14 +650,10 @@ function deleteHistoryEntry(historyIndex) {
 function addHistoryToCurrentPoint() {
     const text = document.getElementById('new-history-entry').value.trim();
     if (!text) return;
-    
     if (currentEditingIndex > -1) {
-        const today = new Date().toLocaleDateString();
-        savedPoints[currentEditingIndex].history.push({
-            date: today,
-            text: text
-        });
-        
+        const now = new Date();
+        const dateStr = now.toLocaleDateString() + " " + now.toLocaleTimeString().slice(0,5);
+        savedPoints[currentEditingIndex].history.push({ date: dateStr, text: text });
         saveToLocalStorage();
         renderPointHistory(savedPoints[currentEditingIndex].history);
         document.getElementById('new-history-entry').value = ""; 
@@ -535,56 +665,40 @@ function savePointEdits() {
     if (currentEditingIndex > -1) {
         savedPoints[currentEditingIndex].emoji = document.getElementById('edit-emoji').value;
         savedPoints[currentEditingIndex].note = document.getElementById('edit-note').value;
-        
-        saveToLocalStorage();
-        refreshMap(); 
+        saveToLocalStorage(); refreshMap(); 
         document.getElementById('modal-edit-point').classList.add('hidden');
         showToast("✅ Point mis à jour");
     }
 }
 
 function deleteCurrentPoint() {
-    if (currentEditingIndex > -1) {
-        deletePoint(currentEditingIndex); 
-        document.getElementById('modal-edit-point').classList.add('hidden');
-    }
+    if (currentEditingIndex > -1) { deletePoint(currentEditingIndex); document.getElementById('modal-edit-point').classList.add('hidden'); }
 }
 
 function deletePoint(i) { 
     savedPoints.splice(i,1); saveToLocalStorage(); refreshMap(); 
     showToast("Point supprimé");
     triggerHaptic('warning');
-    updateYearFilterOptions(); // Mise à jour filtres
+    updateYearFilterOptions(); 
 }
 
 function saveToLocalStorage() { localStorage.setItem('myMapPoints', JSON.stringify(savedPoints)); localStorage.setItem('myMapParcels', JSON.stringify(savedParcels)); }
-
 function loadFromLocalStorage() { 
     savedPoints = JSON.parse(localStorage.getItem('myMapPoints')) || []; 
     savedParcels = JSON.parse(localStorage.getItem('myMapParcels')) || []; 
-    
-    updateYearFilterOptions(); // Initialisation des années
-    refreshMap(); 
-    displayParcels(); 
+    updateYearFilterOptions(); refreshMap(); displayParcels(); 
 }
 
-function clearData() { 
-    if(confirm("TOUT SUPPRIMER ? (Irréversible)")) { 
-        localStorage.clear(); location.reload(); 
-        triggerHaptic('error');
-    } 
-}
+function clearData() { if(confirm("TOUT SUPPRIMER ? (Irréversible)")) { localStorage.clear(); location.reload(); triggerHaptic('error'); } }
 
 function exportData() {
     const data = { points: savedPoints, trips: savedTrips, parcels: savedParcels };
     const a = document.createElement('a'); 
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));
-    
     const now = new Date();
     const dateStr = now.toISOString().slice(0,10); 
     const timeStr = now.getHours() + "h" + now.getMinutes(); 
     a.download = `Begole_Backup_${dateStr}_${timeStr}.json`;
-    
     a.click();
     showToast("💾 Sauvegarde téléchargée !");
     triggerHaptic('success');
@@ -636,12 +750,9 @@ function updateUserMarker(lat, lng, acc, heading) {
         userMarker.setLatLng([lat, lng]);
         userAccuracyCircle.setLatLng([lat, lng]);
         userAccuracyCircle.setRadius(acc);
-        
         if (heading !== null && !isNaN(heading)) {
             var arrowEl = userMarker.getElement().querySelector('.user-location-arrow');
-            if(arrowEl) {
-                arrowEl.style.transform = `rotate(${heading}deg)`;
-            }
+            if(arrowEl) { arrowEl.style.transform = `rotate(${heading}deg)`; }
         }
     }
 }
@@ -649,23 +760,86 @@ function updateUserMarker(lat, lng, acc, heading) {
 function applyFilter() { currentFilterEmoji = document.getElementById('filter-input').value.trim(); refreshMap(); toggleMenu(); }
 function applyTextFilter() { currentFilterText = document.getElementById('text-filter-input').value.trim().toLowerCase(); refreshMap(); toggleMenu(); }
 function resetFilter() { 
-    currentFilterEmoji = null; 
-    currentFilterText = null; 
-    currentFilterYear = 'all';
-    
-    document.getElementById('filter-input').value = ""; 
-    document.getElementById('text-filter-input').value = ""; 
-    document.getElementById('filter-year').value = "all";
-    
+    currentFilterEmoji = null; currentFilterText = null; currentFilterYear = 'all';
+    document.getElementById('filter-input').value = ""; document.getElementById('text-filter-input').value = ""; document.getElementById('filter-year').value = "all";
     refreshMap(); toggleMenu(); 
 }
 
+// ============================================================
+// --- STATS TRIÉES PAR ORDRE CROISSANT + D+ MOYEN ---
+// ============================================================
+// ============================================================
+// --- STATS TRIÉES + 4 INDICATEURS ---
+// ============================================================
 function showStats() {
-    var stats = {}; savedPoints.forEach(p => { stats[p.emoji||"❓"] = (stats[p.emoji||"❓"]||0)+1; });
-    var html = ""; for(var k in stats) html+=`<div class="stat-row"><span class="stat-emoji">${k}</span><span class="stat-count">${stats[k]}</span></div>`;
-    document.getElementById('stats-content').innerHTML = html || "Aucun point.";
-    document.getElementById('stats-overlay').classList.remove('hidden'); toggleMenu();
+    // 1. Calcul des stats globales
+    const totalTrips = savedTrips.length;
+    let totalDist = 0;
+    let totalDuration = 0;
+    let totalElevationGain = 0;
+
+    savedTrips.forEach(t => {
+        totalDist += (t.distance || 0);
+        totalDuration += (t.duration || 0);
+        totalElevationGain += (t.elevationGain || 0);
+    });
+
+    let globalAvgSpeed = 0;
+    if (totalDuration > 0) {
+        const hours = totalDuration / 3600000;
+        globalAvgSpeed = totalDist / hours;
+    }
+    
+    // Moyenne D+ par trajet
+    let avgElevation = totalTrips > 0 ? (totalElevationGain / totalTrips) : 0;
+
+    // 2. Génération HTML des 4 cartes
+    let html = `
+        <div class="stats-summary">
+            <div class="stat-card">
+                <span class="stat-value">${totalTrips}</span>
+                <span class="stat-label">Trajets</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${totalDist.toFixed(1)}</span>
+                <span class="stat-label">Km Tot.</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${globalAvgSpeed.toFixed(1)}</span>
+                <span class="stat-label">Km/h</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">${avgElevation.toFixed(0)}m</span>
+                <span class="stat-label">D+ Moy.</span>
+            </div>
+        </div>
+        <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+        <h4>📍 Points par catégorie (Ordre croissant) :</h4>
+    `;
+
+    // 3. Stats des points (Tri Croissant)
+    var stats = {};
+    savedPoints.forEach(p => { stats[p.emoji||"❓"] = (stats[p.emoji||"❓"]||0)+1; });
+    
+    var sortedStats = Object.keys(stats).map(key => {
+        return { emoji: key, count: stats[key] };
+    });
+
+    sortedStats.sort((a, b) => b.count - a.count);
+    
+    if(sortedStats.length === 0) {
+        html += "<p style='color:#999;font-size:12px;'>Aucun point enregistré.</p>";
+    } else {
+        sortedStats.forEach(item => {
+            html += `<div class="stat-row"><span class="stat-emoji">${item.emoji}</span><span class="stat-count">${item.count}</span></div>`;
+        });
+    }
+
+    document.getElementById('stats-content').innerHTML = html;
+    document.getElementById('stats-overlay').classList.remove('hidden');
+    toggleMenu();
 }
+
 function closeStats() { document.getElementById('stats-overlay').classList.add('hidden'); }
 
 var lastClick=0; function togglePocketMode() { 
