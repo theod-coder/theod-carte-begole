@@ -2,563 +2,428 @@
 const VILLAGE_COORDS = [43.1565, 0.3235]; 
 const DEFAULT_ZOOM = 13;
 
-// 1. Initialisation des FONDS DE CARTE
-var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '© OpenStreetMap'
-});
+// --- 1. INITIALISATION DES FONDS DE CARTE ---
+var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
 
-var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Tiles © Esri'
-});
+var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri' });
 
-var map = L.map('map', {
-    center: VILLAGE_COORDS,
-    zoom: DEFAULT_ZOOM,
-    layers: [satelliteLayer] 
-});
+// Fond Cadastre (IGN) - Affichage visuel (Images PNG transparentes)
+var cadastreLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=CADASTRALPARCELS.PARCELS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png', { maxZoom: 20, attribution: '© IGN' });
 
-var baseMaps = {
-    "Satellite 🛰️": satelliteLayer,
-    "Plan Route 🗺️": osmLayer
-};
-L.control.layers(baseMaps, null, { position: 'bottomright' }).addTo(map);
-// --- AJOUT ECHELLE ---
-L.control.scale({imperial: false, metric: true}).addTo(map);
+var map = L.map('map', { center: VILLAGE_COORDS, zoom: DEFAULT_ZOOM, layers: [satelliteLayer] }); // Sat par défaut
 
-// --- FRONTIÈRES BÉGOLE ---
-fetch('village.json')
-    .then(r => r.json())
-    .then(data => {
-        L.geoJSON(data, {
-            style: { color: '#ff3333', weight: 3, opacity: 0.8, fillOpacity: 0.1 }
-        }).addTo(map);
-    })
-    .catch(e => console.log("Frontières non chargées (fichier village.json manquant ?)"));
+// Gestion des calques
+var baseMaps = { "Satellite 🛰️": satelliteLayer, "Plan Route 🗺️": osmLayer };
+var overlayMaps = { "Cadastre (Traits) 🏠": cadastreLayer };
+L.control.layers(baseMaps, overlayMaps, { position: 'bottomright' }).addTo(map);
+L.control.scale({imperial: false, metric: true}).addTo(map); // Echelle
 
-// --- VARIABLES GLOBALES DONNÉES ---
-var savedPoints = [];
-var markersLayer = L.layerGroup().addTo(map); // Pour les champignons
-var tracksLayer = L.layerGroup().addTo(map);  // Pour les tracés GPS
+// FRONTIÈRES BÉGOLE
+fetch('village.json').then(r => r.json()).then(data => {
+    L.geoJSON(data, { style: { color: '#ff3333', weight: 3, opacity: 0.8, fillOpacity: 0.05 } }).addTo(map);
+}).catch(e => console.log("Pas de village.json"));
 
-var currentFilterEmoji = null; 
-var currentFilterText = null;
+
+// --- VARIABLES GLOBALES ---
+var savedPoints = []; // Champignons
+var savedParcels = []; // Parcelles coloriées
+var markersLayer = L.layerGroup().addTo(map);
+var tracksLayer = L.layerGroup().addTo(map);
+var parcelsLayer = L.layerGroup(); // Caché par défaut
+
+var isTracking = false; var trackWatchId = null; var currentPath = []; var currentStartTime = null; 
+var savedTrips = JSON.parse(localStorage.getItem('begole_gps_trips')) || [];
+var wakeLock = null;
+
+// Variables pour le mode Cadastre
+var isCadastreMode = false;
+var currentParcelGeoJSON = null; 
+var selectedParcelColor = '#95a5a6'; // Gris par défaut
 var tempLatLng = null;
 
-// --- VARIABLES TRACKING (ARIANE) ---
-let isTracking = false;
-let trackWatchId = null;
-let currentPath = [];
-let currentPolyline = null;
-let wakeLock = null;
-let currentStartTime = null; // Pour le chrono
-let savedTrips = JSON.parse(localStorage.getItem('begole_gps_trips')) || [];
+// Variables Filtres
+var currentFilterEmoji = null; 
+var currentFilterText = null;
 
 // Chargement initial
 loadFromLocalStorage();
 
-map.on('click', function(e) {
-    tempLatLng = e.latlng;
-    openModal(); // Ouvre la modale d'ajout de point
-});
-
-// --- MENU ---
-function toggleMenu() {
-    var menu = document.getElementById('menu-items');
-    menu.classList.toggle('hidden-mobile');
-}
 
 // ============================================================
-// --- 1. LOGIQUE WAKE LOCK (GARDER ECRAN ALLUMÉ) ---
+// --- GESTION DU CADASTRE (CLICK & COLOR) ---
 // ============================================================
-async function requestWakeLock() {
-    try {
-        if ('wakeLock' in navigator) {
-            wakeLock = await navigator.wakeLock.request('screen');
-            document.getElementById('wake-status').textContent = "🔆 Écran maintenu actif";
+
+// 1. Activer le mode "Clic pour sélectionner"
+function toggleCadastreMode() {
+    isCadastreMode = document.getElementById('cadastre-mode-toggle').checked;
+    const isParcelsOn = document.getElementById('show-parcels-toggle').checked;
+    
+    if(isCadastreMode) {
+        // ACTIVATION : On met le fond cadastre et on CACHE les points
+        if(!map.hasLayer(cadastreLayer)) map.addLayer(cadastreLayer);
+        if(map.hasLayer(markersLayer)) map.removeLayer(markersLayer);
+        
+        alert("MODE SÉLECTION ACTIVÉ 🏠\nCliquez sur une parcelle pour la colorier.");
+    } else {
+        // DÉSACTIVATION
+        // Si la vue "Mes parcelles" n'est pas active, on retire le cadastre (Retour Satellite)
+        if(!isParcelsOn && map.hasLayer(cadastreLayer)) {
+            map.removeLayer(cadastreLayer);
         }
-    } catch (err) {
-        console.log("Wake Lock erreur:", err);
+
+        // On REMET les points (sauf si "Mes parcelles" est actif, car ce mode les cache aussi)
+        if(!isParcelsOn && !map.hasLayer(markersLayer)) {
+            map.addLayer(markersLayer);
+        }
     }
 }
-async function releaseWakeLock() {
-    if (wakeLock !== null) {
-        await wakeLock.release();
-        wakeLock = null;
-        document.getElementById('wake-status').textContent = "";
+
+// 2. Afficher / Cacher les parcelles coloriées
+function toggleSavedParcels() {
+    const isChecked = document.getElementById('show-parcels-toggle').checked;
+    
+    if (isChecked) {
+        // AFFICHER PARCELLES -> CACHER POINTS -> AFFICHER CADASTRE
+        if (!map.hasLayer(parcelsLayer)) map.addLayer(parcelsLayer);
+        if (map.hasLayer(markersLayer)) map.removeLayer(markersLayer);
+        
+        // AJOUT : On passe automatiquement en vue Cadastre
+        if (!map.hasLayer(cadastreLayer)) map.addLayer(cadastreLayer);
+    } else {
+        // CACHER PARCELLES
+        if (map.hasLayer(parcelsLayer)) map.removeLayer(parcelsLayer);
+        
+        // AJOUT : Retour vue Satellite (Enlever Cadastre), sauf si le mode sélection est encore actif
+        if (!isCadastreMode && map.hasLayer(cadastreLayer)) {
+             map.removeLayer(cadastreLayer);
+        }
+
+        // On ne remet les points que si le mode sélection n'est PAS actif
+        if (!isCadastreMode && !map.hasLayer(markersLayer)) {
+            map.addLayer(markersLayer);
+        }
     }
 }
-// Réactiver le WakeLock si on revient sur l'onglet
-document.addEventListener('visibilitychange', async () => {
-    if (wakeLock !== null && document.visibilityState === 'visible') {
-        await requestWakeLock();
+
+// GESTION DU CLIC SUR LA CARTE
+map.on('click', function(e) {
+    if (isCadastreMode) {
+        // Mode Cadastre : On cherche la parcelle
+        fetchParcelAt(e.latlng);
+    } else {
+        // Mode Normal : On ajoute un point
+        tempLatLng = e.latlng;
+        openModal(); 
     }
 });
 
+// Appel API Carto IGN
+function fetchParcelAt(latlng) {
+    const lat = latlng.lat;
+    const lng = latlng.lng;
+    const url = `https://apicarto.ign.fr/api/cadastre/parcelle?geom={"type":"Point","coordinates":[${lng},${lat}]}`;
+
+    document.body.style.cursor = 'wait';
+
+    fetch(url)
+        .then(response => {
+            if (!response.ok) throw new Error("Erreur Service IGN");
+            return response.json();
+        })
+        .then(data => {
+            document.body.style.cursor = 'default';
+            if (data.features && data.features.length > 0) {
+                const parcel = data.features[0]; 
+                openParcelModal(parcel);
+            } else {
+                alert("Aucune parcelle trouvée ici.");
+            }
+        })
+        .catch(err => {
+            document.body.style.cursor = 'default';
+            console.error(err);
+            alert("Erreur connexion IGN.");
+        });
+}
+
+// Modale et Sauvegarde Parcelle
+function openParcelModal(parcelGeoJSON) {
+    currentParcelGeoJSON = parcelGeoJSON;
+    document.getElementById('parcel-ref').textContent = "Ref: " + (parcelGeoJSON.properties.section + " " + parcelGeoJSON.properties.numero);
+    document.getElementById('parcel-note').value = "";
+    document.getElementById('modal-parcel').classList.remove('hidden');
+    toggleMenu(); 
+}
+function closeParcelModal() {
+    document.getElementById('modal-parcel').classList.add('hidden');
+    currentParcelGeoJSON = null;
+}
+
+function selectColor(color, element) {
+    selectedParcelColor = color;
+    document.querySelectorAll('.color-option').forEach(el => el.classList.remove('selected'));
+    element.classList.add('selected');
+}
+
+function confirmSaveParcel() {
+    if (!currentParcelGeoJSON) return;
+
+    const note = document.getElementById('parcel-note').value;
+    
+    const savedParcel = {
+        id: Date.now(),
+        geoJSON: currentParcelGeoJSON,
+        color: selectedParcelColor,
+        note: note
+    };
+
+    savedParcels.push(savedParcel);
+    saveToLocalStorage(); 
+    displayParcels(); 
+    
+    // AUTO-AFFICHAGE : On force l'interrupteur "Voir mes parcelles" à ON
+    if (!document.getElementById('show-parcels-toggle').checked) {
+        document.getElementById('show-parcels-toggle').checked = true;
+        toggleSavedParcels(); // Ceci va activer le calque et mettre le fond Cadastre
+    }
+    
+    closeParcelModal();
+}
+
+function displayParcels() {
+    parcelsLayer.clearLayers(); 
+
+    savedParcels.forEach(p => {
+        const style = {
+            color: '#333', weight: 1,
+            fillColor: p.color, fillOpacity: 0.6
+        };
+
+        const layer = L.geoJSON(p.geoJSON, {
+            style: style,
+            onEachFeature: function(feature, layer) {
+                layer.bindPopup(`
+                    <div style="text-align:center;">
+                        <b>${p.note || "Sans nom"}</b><br>
+                        <span style="font-size:10px; color:#666;">Ref: ${feature.properties.section} ${feature.properties.numero}</span><br>
+                        <button onclick="deleteParcel(${p.id})" style="background:#e74c3c; color:white; border:none; border-radius:4px; margin-top:5px; padding:4px 8px; cursor:pointer;">Supprimer</button>
+                    </div>
+                `);
+            }
+        });
+        layer.addTo(parcelsLayer);
+    });
+}
+
+function deleteParcel(id) {
+    if(confirm("Supprimer ce coloriage ?")) {
+        savedParcels = savedParcels.filter(p => p.id !== id);
+        saveToLocalStorage();
+        displayParcels();
+    }
+}
+function clearParcels() {
+    if(confirm("Tout effacer les parcelles coloriées ?")) {
+        savedParcels = [];
+        saveToLocalStorage();
+        displayParcels();
+        toggleMenu();
+    }
+}
+
+
 // ============================================================
-// --- 2. LOGIQUE TRACEUR GPS (ARIANE) ---
+// --- FONCTIONS EXISTANTES (Traceur, Points, etc.) ---
 // ============================================================
+
+// MENU
+function toggleMenu() { document.getElementById('menu-items').classList.toggle('hidden-mobile'); }
+
+// TRACEUR GPS
 async function toggleTracking() {
     const btn = document.getElementById('btn-tracking');
     const indicator = document.getElementById('recording-indicator');
-
     if (!isTracking) {
-        // --- DÉMARRAGE ---
-        isTracking = true;
-        currentPath = [];
-        currentStartTime = new Date(); // On lance le chrono
-        
-        btn.innerHTML = "⏹️ Arrêter Enregistrement";
-        btn.className = "btn-stop-track"; // Change en rouge
-        indicator.classList.remove('hidden');
-        
-        // Active le Wake Lock
+        isTracking = true; currentPath = []; currentStartTime = new Date();
+        btn.innerHTML = "⏹️ Arrêter REC"; btn.className = "btn-stop-track"; indicator.classList.remove('hidden');
         await requestWakeLock();
-
-        // Création ligne rouge pour trajet en cours
         currentPolyline = L.polyline([], {color: 'red', weight: 5}).addTo(map);
-
-        if (navigator.geolocation) {
-            trackWatchId = navigator.geolocation.watchPosition(
-                updateTrackingPosition, 
-                (err) => alert("Erreur GPS Traceur"), 
-                { enableHighAccuracy: true }
-            );
-        }
-        toggleMenu(); // Fermer le menu pour voir la carte
+        if (navigator.geolocation) trackWatchId = navigator.geolocation.watchPosition(updateTrackingPosition, null, {enableHighAccuracy:true});
+        toggleMenu();
     } else {
-        // --- ARRÊT ---
-        isTracking = false;
-        navigator.geolocation.clearWatch(trackWatchId);
-        
-        // Désactive Wake Lock
-        await releaseWakeLock();
-
-        btn.innerHTML = "▶️ Démarrer Trajet";
-        btn.className = "btn-start-track"; // Revient en vert
-        indicator.classList.add('hidden');
-
-        // Sauvegarde avec calcul de durée
+        isTracking = false; navigator.geolocation.clearWatch(trackWatchId); await releaseWakeLock();
+        btn.innerHTML = "▶️ Démarrer Trajet"; btn.className = "btn-start-track"; indicator.classList.add('hidden');
         if (currentPath.length > 0) {
-            const endTime = new Date();
-            saveTrip(currentPath, currentStartTime, endTime);
-            alert(`Trajet terminé !\nDurée : ${formatDuration(endTime - currentStartTime)}`);
+            saveTrip(currentPath, currentStartTime, new Date());
+            alert(`Trajet terminé !\nDurée : ${formatDuration(new Date() - currentStartTime)}`);
         }
-        
-        // Nettoyage visuel immédiat (on pourra le revoir dans l'historique)
         if (currentPolyline) map.removeLayer(currentPolyline);
     }
 }
-
-function updateTrackingPosition(position) {
-    const lat = position.coords.latitude;
-    const lng = position.coords.longitude;
-    const newLatLng = [lat, lng];
-
-    // Mise à jour visuelle du marqueur utilisateur
-    updateUserMarker(lat, lng, position.coords.accuracy);
-
-    // Ajout au tracé
-    currentPath.push(newLatLng);
-    currentPolyline.setLatLngs(currentPath);
-    map.setView(newLatLng); // Centrer auto
+function updateTrackingPosition(pos) {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    updateUserMarker(latlng[0], latlng[1], pos.coords.accuracy);
+    currentPath.push(latlng); currentPolyline.setLatLngs(currentPath); map.setView(latlng);
 }
-
-function saveTrip(path, startTime, endTime) {
-    // Calcul durée (si dispo)
-    const duration = (startTime && endTime) ? (endTime - startTime) : 0;
-
-    const trip = {
-        id: Date.now(),
-        date: (startTime || new Date()).toISOString(),
-        duration: duration,
-        points: path
-    };
-    savedTrips.push(trip);
+function saveTrip(path, start, end) {
+    savedTrips.push({ id: Date.now(), date: start.toISOString(), duration: (end-start), points: path });
     localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
 }
-
-// --- HISTORIQUE DES TRAJETS ---
-function openHistory() {
-    renderHistoryList();
-    document.getElementById('history-overlay').classList.remove('hidden');
-    toggleMenu();
-}
-function closeHistory() {
-    document.getElementById('history-overlay').classList.add('hidden');
-}
-
-// Convertit des millisecondes en texte lisible
 function formatDuration(ms) {
     if (!ms) return "--";
     const seconds = Math.floor((ms / 1000) % 60);
     const minutes = Math.floor((ms / (1000 * 60)) % 60);
     const hours = Math.floor((ms / (1000 * 60 * 60)));
-
     if (hours > 0) return `${hours}h ${minutes}min`;
     return `${minutes}min ${seconds}s`;
 }
 
-// Supprime un trajet spécifique
-function deleteTrip(id, event) {
-    if (event) event.stopPropagation(); // Empêche d'ouvrir le trajet quand on clique sur la poubelle
-    
-    if (confirm("Voulez-vous vraiment supprimer ce trajet de l'historique ?")) {
-        savedTrips = savedTrips.filter(t => t.id !== id);
-        localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
-        renderHistoryList(); // Rafraîchit la liste
-        clearMapLayers(); // Efface la carte au cas où ce trajet était affiché
-    }
-}
-
+// HISTORIQUE
+function openHistory() { renderHistoryList(); document.getElementById('history-overlay').classList.remove('hidden'); toggleMenu(); }
+function closeHistory() { document.getElementById('history-overlay').classList.add('hidden'); }
 function renderHistoryList() {
-    const container = document.getElementById('tripList');
-    container.innerHTML = '';
-    
-    // Tri par date décroissante
-    const sorted = savedTrips.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    if(sorted.length === 0) {
-        container.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Aucun trajet enregistré.</div>';
-        return;
-    }
-
-    sorted.forEach((trip) => {
+    const div = document.getElementById('tripList'); div.innerHTML = "";
+    savedTrips.sort((a,b)=>new Date(b.date)-new Date(a.date)).forEach(trip => {
         const d = new Date(trip.date);
-        const dateStr = d.toLocaleDateString() + ' à ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        
-        // Affichage Durée ou Points (rétro-compatibilité)
-        const infoStr = trip.duration ? `⏱️ ${formatDuration(trip.duration)}` : `📍 ${trip.points.length} points (Ancien)`;
-
-        const div = document.createElement('div');
-        div.className = 'trip-item';
-        // Tout le bloc est cliquable pour voir le trajet
-        div.onclick = () => {
-            showSingleTrip(trip);
-            closeHistory();
-        };
-
-        div.innerHTML = `
-            <div style="flex-grow:1;">
-                <span class="trip-date">${dateStr}</span>
-                <span class="trip-info">${infoStr}</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:10px;">
-                <button class="btn-delete-trip" onclick="deleteTrip(${trip.id}, event)">🗑️</button>
-                <div class="trip-action-icon">👁️</div>
-            </div>
-        `;
-        container.appendChild(div);
+        const infoStr = trip.duration ? `⏱️ ${formatDuration(trip.duration)}` : `📍 ${trip.points.length} points`;
+        div.innerHTML += `
+            <div class="trip-item" onclick="showSingleTrip(${trip.id})">
+                <div style="flex-grow:1;"><span class="trip-date">${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0,5)}</span><span class="trip-info">${infoStr}</span></div>
+                <div style="display:flex;align-items:center;gap:10px;"><button class="btn-delete-trip" onclick="deleteTrip(${trip.id}, event)">🗑️</button><div class="trip-action-icon">👁️</div></div>
+            </div>`;
     });
 }
+function showSingleTrip(id) {
+    clearMapLayers();
+    const trip = savedTrips.find(t=>t.id===id);
+    if(trip) { 
+        if(map.hasLayer(markersLayer)) map.removeLayer(markersLayer);
+        L.polyline(trip.points, {color:'#3498db', weight:5}).addTo(tracksLayer); 
+        map.fitBounds(L.polyline(trip.points).getBounds()); 
+        closeHistory(); 
+    }
+}
+function showAllTrips() {
+    clearMapLayers();
+    if(map.hasLayer(markersLayer)) map.removeLayer(markersLayer);
+    savedTrips.forEach(t => L.polyline(t.points, {color:'#2980b9', weight:3, opacity:0.8}).addTo(tracksLayer));
+    closeHistory();
+}
+function deleteTrip(id, e) { e.stopPropagation(); if(confirm("Supprimer ?")) { savedTrips=savedTrips.filter(t=>t.id!==id); localStorage.setItem('begole_gps_trips',JSON.stringify(savedTrips)); renderHistoryList(); clearMapLayers(); } }
 
-// --- FONCTIONS D'AFFICHAGE ET NETTOYAGE MODIFIÉES ---
-
-function clearMapLayers() {
-    tracksLayer.clearLayers();
-    // RÉAPPARITION DES POINTS : On remet les champignons quand on efface les tracés
-    if (!map.hasLayer(markersLayer)) {
+function clearMapLayers() { 
+    tracksLayer.clearLayers(); 
+    // On remet les points SEULEMENT SI aucun mode cadastre n'est actif
+    const isParcelsOn = document.getElementById('show-parcels-toggle').checked;
+    const isSelectOn = document.getElementById('cadastre-mode-toggle').checked;
+    
+    if(!isParcelsOn && !isSelectOn && !map.hasLayer(markersLayer)) {
         map.addLayer(markersLayer);
     }
 }
 
-function showSingleTrip(trip) {
-    clearMapLayers(); 
-    
-    // DISPARITION DES POINTS : On cache les champignons pour voir le tracé
-    if (map.hasLayer(markersLayer)) {
-        map.removeLayer(markersLayer);
-    }
+// WAKE LOCK
+async function requestWakeLock() { try { if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
+async function releaseWakeLock() { if(wakeLock) { await wakeLock.release(); wakeLock=null; } }
 
-    // Affiche le tracé en bleu (Single)
-    const poly = L.polyline(trip.points, {color: '#3498db', weight: 5}).addTo(tracksLayer);
-    map.fitBounds(poly.getBounds());
-}
-
-function showAllTrips() {
-    clearMapLayers();
-    
-    // DISPARITION DES POINTS : On cache les champignons pour voir TOUS les tracés
-    if (map.hasLayer(markersLayer)) {
-        map.removeLayer(markersLayer);
-    }
-
-    const allPoints = [];
-    savedTrips.forEach(trip => {
-        // --- MODIFICATION ICI : COULEUR BLEU (#2980b9) AU LIEU DE VIOLET ---
-        const poly = L.polyline(trip.points, {color: '#2980b9', weight: 3, opacity: 0.8}).addTo(tracksLayer);
-        allPoints.push(...trip.points);
-    });
-    
-    if (allPoints.length > 0) {
-        map.fitBounds(L.polyline(allPoints).getBounds());
-    }
-    closeHistory();
-}
-
-// ============================================================
-// --- 3. LOGIQUE EXISTANTE (POINTS, FILTRES, ETC.) ---
-// ============================================================
-
-// --- FILTRES ---
-function applyFilter() {
-    var inputVal = document.getElementById('filter-input').value.trim();
-    if (inputVal) {
-        currentFilterEmoji = inputVal;
-        refreshMap();
-        toggleMenu();
-    } else { alert("Entrez un émoji !"); }
-}
-function applyTextFilter() {
-    var textVal = document.getElementById('text-filter-input').value.trim().toLowerCase();
-    currentFilterText = textVal;
-    refreshMap();
-    toggleMenu();
-}
-function resetFilter() {
-    currentFilterEmoji = null; currentFilterText = null;
-    document.getElementById('filter-input').value = "";
-    document.getElementById('text-filter-input').value = "";
-    refreshMap();
-    toggleMenu();
-}
-
-// --- STATS ---
-function showStats() {
-    var stats = {};
-    savedPoints.forEach(p => {
-        var emoji = p.emoji || "❓";
-        stats[emoji] = (stats[emoji] || 0) + 1;
-    });
-
-    var htmlContent = "";
-    if (Object.keys(stats).length === 0) {
-        htmlContent = "<p style='text-align:center; color:#999;'>Aucun point enregistré.</p>";
-    } else {
-        for (var key in stats) {
-            htmlContent += `
-                <div class="stat-row">
-                    <div style="display:flex; align-items:center;">
-                        <span class="stat-emoji">${key}</span>
-                        <span class="stat-count">${stats[key]} points</span>
-                    </div>
-                </div>`;
-        }
-        htmlContent += `<div style="margin-top:15px; text-align:center; font-weight:bold; color:#666; font-size:14px;">
-            Total : ${savedPoints.length} points
-        </div>`;
-    }
-    document.getElementById('stats-content').innerHTML = htmlContent;
-    document.getElementById('stats-overlay').classList.remove('hidden');
-    toggleMenu();
-}
-function closeStats() {
-    document.getElementById('stats-overlay').classList.add('hidden');
-}
-
-// --- VISUALISATION SIMPLE GPS (SANS ENREGISTREMENT) ---
-var userMarker = null; var userAccuracyCircle = null; var watchId = null;
-
-function toggleLocation() {
-    var btn = document.getElementById('btn-loc');
-    if (watchId) {
-        navigator.geolocation.clearWatch(watchId); watchId = null;
-        if (userMarker) map.removeLayer(userMarker);
-        if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
-        userMarker = null; 
-        btn.innerHTML = "📍 Ma position (Simple)"; btn.style.backgroundColor = "#9b59b6";
-        toggleMenu(); 
-    } else {
-        if (!navigator.geolocation) { alert("Pas de GPS"); return; }
-        btn.innerHTML = "🛑 Cacher position"; btn.style.backgroundColor = "#7f8c8d";
-        watchId = navigator.geolocation.watchPosition(
-            (position) => {
-                updateUserMarker(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
-                map.setView([position.coords.latitude, position.coords.longitude], 16);
-            },
-            (error) => { alert("Erreur GPS"); toggleLocation(); },
-            { enableHighAccuracy: true }
-        );
-        toggleMenu();
-    }
-}
-
-// Fonction partagée pour mettre à jour le point bleu
-function updateUserMarker(lat, lng, accuracy) {
-    if (!userMarker) {
-        var pulsingIcon = L.divIcon({ className: 'user-location-dot', iconSize: [20, 20] });
-        userMarker = L.marker([lat, lng], {icon: pulsingIcon}).addTo(map);
-        userAccuracyCircle = L.circle([lat, lng], {radius: accuracy, color: '#3498db', fillOpacity: 0.15}).addTo(map);
-    } else {
-        userMarker.setLatLng([lat, lng]);
-        userAccuracyCircle.setLatLng([lat, lng]);
-        userAccuracyCircle.setRadius(accuracy);
-    }
-}
-
-// --- MODALE AJOUT ---
-function openModal() {
-    document.getElementById('modal-overlay').classList.remove('hidden');
-    var emojiInput = document.getElementById('input-emoji');
-    emojiInput.value = "📍"; emojiInput.focus();
-}
-function closeModal() {
-    document.getElementById('modal-overlay').classList.add('hidden');
-    document.getElementById('input-note').value = "";
-}
+// POINTS & SAUVEGARDE
+function openModal() { document.getElementById('modal-overlay').classList.remove('hidden'); }
+function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
 function confirmAddPoint() {
-    var emoji = document.getElementById('input-emoji').value || "📍";
-    var note = document.getElementById('input-note').value;
-    if (note) {
-        addPoint(tempLatLng.lat, tempLatLng.lng, note, emoji);
-        closeModal();
-    } else { alert("Description manquante !"); }
-}
-
-// --- CRUD POINTS ---
-function deletePoint(index) {
-    if (confirm("Supprimer ce point ?")) {
-        savedPoints.splice(index, 1); 
-        saveToLocalStorage();
-        refreshMap(); 
-    }
-}
-function addPoint(lat, lng, note, emoji) {
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('fr-FR') + ' ' + now.toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
-    savedPoints.push({ lat: lat, lng: lng, note: note, emoji: emoji, date: dateStr });
-    saveToLocalStorage();
-    refreshMap(); 
-}
-function createMarker(lat, lng, note, emoji, date, index) {
-    var customIcon = L.divIcon({
-        className: 'emoji-icon', html: emoji, iconSize: [34, 34], iconAnchor: [17, 17]
-    });
-    
-    var marker = L.marker([lat, lng], { icon: customIcon });
-
-    var dateDisplay = date ? `<div style="color:#888; font-size:11px; margin-top:4px;">📅 ${date}</div>` : "";
-    var googleMapsLink = `http://googleusercontent.com/maps.google.com/maps?q=${lat},${lng}`;
-
-    var popupContent = `
-        <div style="text-align:center; min-width: 140px;">
-            <div style="font-size: 28px; margin-bottom: 5px;">${emoji}</div>
-            <b style="font-size: 14px; color: #333;">${note}</b>
-            ${dateDisplay}
-            <div style="margin-top: 8px;">
-                <a href="${googleMapsLink}" target="_blank" class="popup-btn-go">🚗 Y aller</a>
-            </div>
-            <div style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
-                <button onclick="deletePoint(${index})" class="btn-popup-delete">🗑️ Supprimer</button>
-            </div>
-        </div>
-    `;
-    marker.bindPopup(popupContent);
-    marker.addTo(markersLayer);
-}
-
-function saveToLocalStorage() { localStorage.setItem('myMapPoints', JSON.stringify(savedPoints)); }
-function loadFromLocalStorage() {
-    var data = localStorage.getItem('myMapPoints');
-    if (data) { savedPoints = JSON.parse(data); refreshMap(); }
+    const emoji = document.getElementById('input-emoji').value || "📍";
+    const note = document.getElementById('input-note').value;
+    savedPoints.push({ lat: tempLatLng.lat, lng: tempLatLng.lng, note: note, emoji: emoji, date: new Date().toLocaleDateString() });
+    saveToLocalStorage(); refreshMap(); closeModal();
 }
 function refreshMap() {
     markersLayer.clearLayers();
-    savedPoints.forEach((p, i) => {
+    savedPoints.forEach((p,i) => {
         if (currentFilterEmoji && p.emoji !== currentFilterEmoji) return;
         if (currentFilterText && !p.note.toLowerCase().includes(currentFilterText)) return;
-        createMarker(p.lat, p.lng, p.note, p.emoji, p.date, i);
+        L.marker([p.lat, p.lng], { icon: L.divIcon({className:'emoji-icon', html:p.emoji, iconSize:[30,30]}) })
+        .bindPopup(`<div style="text-align:center;min-width:140px;"><div style="font-size:28px;">${p.emoji}</div><b>${p.note}</b><br><a href="http://maps.google.com/maps?q=${p.lat},${p.lng}" class="popup-btn-go">Y aller</a><br><button class="btn-popup-delete" onclick="deletePoint(${i})">Supprimer</button></div>`)
+        .addTo(markersLayer);
     });
 }
-function clearData() {
-    if(confirm("Tout effacer ? (Points et Trajets)")) {
-        savedPoints = []; 
-        savedTrips = [];
-        localStorage.removeItem('begole_gps_trips');
-        saveToLocalStorage(); 
-        refreshMap(); 
-        toggleMenu();
-    }
+function deletePoint(i) { savedPoints.splice(i,1); saveToLocalStorage(); refreshMap(); }
+
+// DATA MANAGEMENT
+function saveToLocalStorage() {
+    localStorage.setItem('myMapPoints', JSON.stringify(savedPoints));
+    localStorage.setItem('myMapParcels', JSON.stringify(savedParcels));
 }
-
-// --- SAUVEGARDE ET CHARGEMENT (COMPLET : POINTS + TRAJETS) ---
-
+function loadFromLocalStorage() {
+    savedPoints = JSON.parse(localStorage.getItem('myMapPoints')) || [];
+    savedParcels = JSON.parse(localStorage.getItem('myMapParcels')) || [];
+    refreshMap();
+    displayParcels(); 
+}
+function clearData() { if(confirm("TOUT SUPPRIMER ?")) { localStorage.clear(); location.reload(); } }
 function exportData() {
-    // On crée un objet complet avec les deux listes
-    const backupData = {
-        points: savedPoints,
-        trips: savedTrips
-    };
-    
-    const dataStr = JSON.stringify(backupData, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a'); 
-    a.href = url;
-    a.download = `backup-begole-${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(a); 
-    a.click(); 
-    document.body.removeChild(a); 
-    toggleMenu();
+    // LES PARCELLES SONT BIEN INCLUSES
+    const data = { points: savedPoints, trips: savedTrips, parcels: savedParcels }; 
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));
+    a.download = "backup_begole.json"; a.click();
 }
-
 function importData(input) {
-    const file = input.files[0]; 
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try { 
-            const data = JSON.parse(e.target.result);
-            
-            // Gestion de la compatibilité
-            if (Array.isArray(data)) {
-                // Ancien format : liste de points uniquement
-                savedPoints = data;
-                alert("Ancien format détecté : Seuls les points ont été importés.");
-            } else {
-                // Nouveau format : objet { points: [], trips: [] }
-                if (data.points) savedPoints = data.points;
-                if (data.trips) savedTrips = data.trips;
-                
-                // Sauvegarde immédiate
-                localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
-                alert(`Import réussi !\n${savedPoints.length} points\n${savedTrips.length} trajets`);
-            }
-
-            saveToLocalStorage(); // Sauvegarde les points
-            refreshMap(); 
-        } 
-        catch (err) { 
-            console.error(err);
-            alert("Erreur : Le fichier est invalide."); 
-        }
+    const fr = new FileReader();
+    fr.onload = e => {
+        const d = JSON.parse(e.target.result);
+        if(d.points) savedPoints = d.points;
+        if(d.trips) savedTrips = d.trips;
+        if(d.parcels) savedParcels = d.parcels; 
+        localStorage.setItem('begole_gps_trips', JSON.stringify(savedTrips));
+        saveToLocalStorage();
+        location.reload();
     };
-    reader.readAsText(file); 
-    toggleMenu();
-    // Reset l'input pour pouvoir réimporter le même fichier si besoin
-    input.value = ''; 
+    fr.readAsText(input.files[0]);
 }
 
-// --- MODE POCHE ---
-// Protection contre les clics accidentels + économie batterie (écran noir)
-var lastClickTime = 0;
-function togglePocketMode() {
-    var overlay = document.getElementById('pocket-overlay');
-    var isHidden = overlay.classList.contains('hidden-poche');
-
-    if (isHidden) {
-        // ACTIVER
-        overlay.classList.remove('hidden-poche');
-        toggleMenu(); // Ferme le menu derrière
-    } else {
-        // DÉSACTIVER (Double clic simulé par le temps)
-        var currentTime = new Date().getTime();
-        if (currentTime - lastClickTime < 500) {
-            overlay.classList.add('hidden-poche');
-        } else {
-            // Premier clic : attente du 2eme
-            lastClickTime = currentTime;
-        }
+// Position Marker Logic
+function toggleLocation() {
+    var btn = document.getElementById('btn-loc');
+    if (trackWatchId) {
+         if(userMarker) map.removeLayer(userMarker); 
+         if(userAccuracyCircle) map.removeLayer(userAccuracyCircle);
+         navigator.geolocation.clearWatch(trackWatchId); trackWatchId=null;
+         btn.innerHTML = "📍 Ma position (Simple)";
+         return; 
     }
+    if (!navigator.geolocation) { alert("Pas de GPS"); return; }
+    btn.innerHTML = "🛑 Stop";
+    trackWatchId = navigator.geolocation.watchPosition(
+        (pos) => updateUserMarker(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+        (err) => console.error(err), {enableHighAccuracy:true}
+    );
+}
+var userMarker=null; var userAccuracyCircle=null;
+function updateUserMarker(lat, lng, acc) {
+    if(!userMarker) {
+        var icon = L.divIcon({ className: 'user-location-dot', iconSize: [20, 20] });
+        userMarker = L.marker([lat, lng], {icon: icon}).addTo(map);
+        userAccuracyCircle = L.circle([lat, lng], {radius: acc, color: '#3498db', fillOpacity: 0.15}).addTo(map);
+    } else {
+        userMarker.setLatLng([lat, lng]); userAccuracyCircle.setLatLng([lat, lng]); userAccuracyCircle.setRadius(acc);
+    }
+}
+
+// Filtres
+function applyFilter() { currentFilterEmoji = document.getElementById('filter-input').value.trim(); refreshMap(); toggleMenu(); }
+function applyTextFilter() { currentFilterText = document.getElementById('text-filter-input').value.trim().toLowerCase(); refreshMap(); toggleMenu(); }
+function resetFilter() { currentFilterEmoji = null; currentFilterText = null; document.getElementById('filter-input').value = ""; document.getElementById('text-filter-input').value = ""; refreshMap(); toggleMenu(); }
+
+// Stats
+function showStats() {
+    var stats = {}; savedPoints.forEach(p => { stats[p.emoji||"❓"] = (stats[p.emoji||"❓"]||0)+1; });
+    var html = ""; for(var k in stats) html+=`<div class="stat-row"><span class="stat-emoji">${k}</span><span class="stat-count">${stats[k]}</span></div>`;
+    document.getElementById('stats-content').innerHTML = html || "Aucun point.";
+    document.getElementById('stats-overlay').classList.remove('hidden'); toggleMenu();
+}
+function closeStats() { document.getElementById('stats-overlay').classList.add('hidden'); }
+
+// MODE POCHE
+var lastClick=0; function togglePocketMode() { 
+    const el=document.getElementById('pocket-overlay'); 
+    if(el.classList.contains('hidden-poche')) { el.classList.remove('hidden-poche'); toggleMenu(); }
+    else { if(Date.now()-lastClick<500) el.classList.add('hidden-poche'); lastClick=Date.now(); }
 }
