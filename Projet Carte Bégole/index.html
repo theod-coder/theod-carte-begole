@@ -15,16 +15,13 @@
     <title>Bégole Map 🌳</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
-    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <div id="weather-overlay"></div>
-
     <div id="map"></div>
 
     <div id="replay-controls" class="hidden">
@@ -92,10 +89,6 @@
                 <button onclick="openPlantNetModal()" class="btn-grid" style="background:#27ae60;">
                     <span class="grid-icon">🌿</span><span class="grid-text">Identifier<br>une Plante</span>
                 </button>
-                
-                <button onclick="openBegoledex()" class="btn-grid" style="background:#8e44ad;">
-                    <span class="grid-icon">📖</span><span class="grid-text">Ouvrir mon<br>Bégolédex</span>
-                </button>
 
                 <button onclick="startAR()" class="btn-grid" style="background:#e74c3c;">
                     <span class="grid-icon">🕶️</span><span class="grid-text">Réalité<br>Augmentée</span>
@@ -109,11 +102,6 @@
                 <button onclick="openPisteur()" class="btn-grid" style="background:#795548;">
                     <span class="grid-icon">🐾</span>
                     <span class="grid-text">Guide du<br>Pisteur</span>
-                </button>
-                
-                <button onclick="openMetalDetector()" class="btn-grid" style="background: #607d8b;">
-                    <span class="grid-icon">🧲</span>
-                    <span class="grid-text">Détecteur<br>de Métaux</span>
                 </button>
             </div>
 
@@ -131,12 +119,10 @@
             </div>
             
             <button onclick="togglePocketMode()" style="background-color:#34495e; font-size:12px; padding:10px; width:100%;">🌑 Mode Poche (Économie Batterie)</button>
-            <div id="wake-status" style="font-size:9px; color:#999; text-align:right; margin-top: 2px;"></div>
 
             <hr>
 
             <div class="menu-section-title">🗺️ Calques de Carte</div>
-
             <div class="toggles-container">
                 <div class="toggle-row"><span>📡 Radar (40m)</span><label class="switch"><input type="checkbox" id="radar-toggle" onchange="toggleRadar()"><span class="slider round"></span></label></div>
                 <div class="toggle-row"><span>🏰 Frontières</span><label class="switch"><input type="checkbox" id="borders-toggle" onchange="toggleBorders()" checked><span class="slider round"></span></label></div>
@@ -236,24 +222,6 @@
         </div>
     </div>
 
-    <div id="modal-metal" class="hidden" style="background: #222; color: #fff;">
-        <div class="modal-content" style="background: transparent; box-shadow: none; border: none; padding: 20px; text-align: center;">
-            <h2 style="color: #f1c40f; text-shadow: 0 0 10px #f1c40f; margin-top: 0;">🧲 Détecteur</h2>
-            
-            <div id="metal-val" style="font-size: 40px; font-family: monospace; font-weight: bold; margin: 20px 0;">0 µT</div>
-            
-            <div style="width: 100%; height: 300px; background: #333; border-radius: 15px; position: relative; overflow: hidden; border: 2px solid #555;">
-                <div id="metal-bar" style="width: 100%; height: 0%; background: linear-gradient(to top, #2ecc71, #f1c40f, #e74c3c); position: absolute; bottom: 0; transition: height 0.1s;"></div>
-                <div style="width: 100%; height: 2px; background: rgba(255,255,255,0.3); position: absolute; bottom: 60%; border-top: 1px dashed white;"></div>
-            </div>
-            
-            <p style="color: #aaa; font-size: 12px; margin-top: 15px;">Approchez le haut du téléphone d'un objet métallique.</p>
-            
-            <button onclick="closeMetalDetector()" class="btn-close" style="background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 20px; font-weight: bold; margin-top: 20px; cursor: pointer;">Fermer</button>
-        </div>
-    </div>
-
-    <div id="modal-begoledex" class="hidden" onclick="closeBegoledex()"><div class="modal-box" onclick="event.stopPropagation()" style="max-height: 85vh; display:flex; flex-direction:column;"><h3 style="background-color:#8e44ad;">📖 Mon Bégolédex</h3><div style="padding:10px; background:#f9f9f9; border-bottom:1px solid #eee;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;"><span style="font-weight:bold; color:#555;">Espèces uniques :</span><span id="begoledex-count" style="font-weight:800; color:#8e44ad; font-size:18px;">0</span></div><div style="background:#eee; height:10px; border-radius:5px; overflow:hidden;"><div id="begoledex-bar" style="background:#8e44ad; height:100%; width:0%;"></div></div></div><div id="begoledex-grid" class="begoledex-grid"></div><button onclick="closeBegoledex()" class="btn-confirm" style="width:100%; margin-top:10px;">Fermer le livre</button></div></div>
     <div id="lightbox-overlay" class="hidden" onclick="closeLightbox()"><img id="lightbox-img" src="" alt="Photo en grand"></div>
     <div id="ar-screen" class="hidden"><video id="ar-video" autoplay playsinline muted></video><div id="ar-points-container"></div><div class="ar-ui-top"><span style="font-weight:bold; color:white; text-shadow:0 1px 3px black;">🕶️ Mode AR</span><button onclick="stopAR()" class="btn-cancel" style="padding:5px 15px; font-size:12px;">Fermer</button></div><div class="ar-ui-bottom"><p style="color:white; font-size:12px; text-align:center; text-shadow:0 1px 3px black;">Pointe ton téléphone vers l'horizon.<br>Rayon : 1 km.</p></div></div>
 
@@ -261,7 +229,7 @@
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=4"></script>
 
 </body>
 </html>

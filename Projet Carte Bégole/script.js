@@ -42,12 +42,12 @@ var parcelsLayer = L.layerGroup();
 var heatLayer = null; 
 
 var isTracking = false, trackWatchId = null; 
-// currentTraceLayer remplace l'ancien currentPolyline pour le mode arc-en-ciel
 var currentPath = [], currentStartTime = null, currentDistance = 0, currentTraceLayer = null;
 var timerInterval = null, wakeLock = null;
 var autoSaveInterval = null; 
 var isCompassMode = false;
 var isRadarActive = false, alertedPoints = new Set(); 
+var lastPositionTime = null;
 
 var currentFilterEmoji = null, currentFilterText = null, currentFilterYear = 'all', currentFilterMonth = 'all'; 
 var isAutoCentering = true, isCadastreMode = false, currentParcelGeoJSON = null, selectedParcelColor = '#95a5a6'; 
@@ -73,7 +73,6 @@ async function startApp() {
     savedPoints = await loadAllFromDB('points'); savedParcels = await loadAllFromDB('parcels'); savedTrips = await loadAllFromDB('trips');
     await cleanDuplicates();
     updateYearFilterOptions(); refreshMap(); displayParcels(); checkCrashRecovery(); updateAstroWidget(); updateWeatherWidget(); updateUserLevel(); 
-    // Init Shake Listener
     initShakeListener();
 }
 startApp();
@@ -175,9 +174,11 @@ async function toggleTracking() {
         isTracking = true; 
         isAutoCentering = true; 
         document.getElementById('btn-recenter').classList.add('hidden'); 
+        
         currentPath = []; 
         currentDistance = 0; 
         currentStartTime = new Date(); 
+        lastPositionTime = Date.now(); // Reset du chrono vitesse
         alertedPoints.clear(); 
         
         btn.innerHTML = "⏹️ Stop"; 
@@ -233,8 +234,22 @@ function saveTrackState() { if(isTracking && currentPath.length > 0) { localStor
 function updateTrackingPosition(pos) { 
     const lat = pos.coords.latitude, lng = pos.coords.longitude; 
     const alt = pos.coords.altitude || 0;
-    const speed = pos.coords.speed; // Vitesse en m/s
     
+    // 1. RECUPERATION INTELLIGENTE DE LA VITESSE
+    let speed = pos.coords.speed; // Vitesse GPS native (m/s)
+    const now = Date.now();
+
+    // Si le GPS ne donne pas la vitesse, on la calcule !
+    if ((speed === null || speed === 0) && lastPositionTime && currentPath.length > 0) {
+        const lastPt = currentPath[currentPath.length - 1];
+        const distM = map.distance([lastPt[0], lastPt[1]], [lat, lng]); // Distance mètres
+        const timeDiffS = (now - lastPositionTime) / 1000; // Temps secondes
+        if (timeDiffS > 0) {
+            speed = distM / timeDiffS; // v = d/t
+        }
+    }
+    lastPositionTime = now;
+
     // Radar
     if (isRadarActive) { 
         savedPoints.forEach(p => { 
@@ -272,7 +287,7 @@ function updateTrackingPosition(pos) {
     // -----------------------------
 
     // On stocke la vitesse (index 3) pour le Replay !
-    const newLL = [lat, lng, alt, speed]; 
+    const newLL = [lat, lng, alt, speed || 0]; 
     currentPath.push(newLL); 
     saveTrackState(); 
 }
@@ -419,11 +434,11 @@ function getSpeedColor(speedMs) {
     // Conversion m/s vers km/h (si speedMs est null, on considère 0)
     const kmh = (speedMs || 0) * 3.6; 
     
-    // ÉCHELLE MODIFIÉE (PLUS SENSIBLE)
-    if (kmh < 1.0) return '#3498db'; // Bleu  : Arrêt / Piétinement (< 1 km/h)
-    if (kmh < 3.0) return '#2ecc71'; // Vert  : Marche lente / Montée (1 - 3 km/h)
+    // ÉCHELLE RANDO
+    if (kmh < 1.0) return '#3498db'; // Bleu  : Arrêt (< 1 km/h)
+    if (kmh < 3.0) return '#2ecc71'; // Vert  : Marche lente (1 - 3 km/h)
     if (kmh < 5.0) return '#f1c40f'; // Jaune : Marche normale (3 - 5 km/h)
-    return '#e74c3c';                // Rouge : Marche rapide / Descente (> 5 km/h)
+    return '#e74c3c';                // Rouge : Marche rapide (> 5 km/h)
 }
 
 function updateYearFilterOptions() { const s=document.getElementById('filter-year'); const cur=s.value; s.innerHTML='<option value="all">Toutes</option>'; const yrs=new Set(savedPoints.map(p=>p.date.split('/')[2].substring(0,4))); Array.from(yrs).sort().reverse().forEach(y=>{const o=document.createElement('option');o.value=y;o.innerText=y;s.appendChild(o);}); s.value=cur; }
@@ -466,227 +481,133 @@ function updateUserLevel() { const totalPoints = savedPoints.length; const total
 function triggerWeatherEffect(weatherDesc) { const container = document.getElementById('weather-overlay'); if(!container) return; container.innerHTML = ''; document.body.classList.remove('weather-active', 'weather-fading'); container.style.opacity = '1'; if (!weatherDesc) return; const w = weatherDesc.toLowerCase(); let type = null; if (w.includes('pluie') || w.includes('averse') || w.includes('orage')) type = 'rain'; if (w.includes('neige') || w.includes('flocon')) type = 'snow'; if (type) { document.body.classList.add('weather-active'); const count = type === 'rain' ? 50 : 30; for (let i = 0; i < count; i++) { const p = document.createElement('div'); p.classList.add(type); p.style.left = Math.random() * 100 + 'vw'; p.style.animationDuration = (Math.random() * 1 + 0.5) + 's'; if(type === 'snow') { p.style.width = p.style.height = (Math.random() * 5 + 3) + 'px'; p.style.animationDuration = (Math.random() * 3 + 2) + 's'; } container.appendChild(p); } setTimeout(() => { document.body.classList.add('weather-fading'); }, 4000); setTimeout(() => { document.body.classList.remove('weather-active', 'weather-fading'); container.innerHTML = ''; }, 5000); } }
 
 // ============================================================
-// --- 14. PLANTNET (OPTIMISÉ + COMPRESSION) ---
+// --- 14. PLANTNET (API CORRIGÉE & COMPRESSION) ---
 // ============================================================
-const PLANTNET_API_KEY = "2b10dfC88PYdZVoTVkFYcg"; 
+// --- METS TA CLÉ ICI (SANS ESPACES) ---
+const PLANTNET_API_KEY = "2b10FAmoTbTZwVvtpZFrsy9su"; 
+
 function openPlantNetModal() { document.getElementById('modal-plantnet').classList.remove('hidden'); document.getElementById('plantnet-results').innerHTML = ""; document.getElementById('plantnet-upload-area').classList.remove('hidden'); document.getElementById('plantnet-loading').classList.add('hidden'); toggleMenu(); }
 function closePlantNetModal() { document.getElementById('modal-plantnet').classList.add('hidden'); }
 async function handlePlantUpload(input) {
     if (!input.files || !input.files[0]) return;
     const file = input.files[0];
-    const organSelect = document.getElementById('plant-organ');
-    const organ = organSelect ? organSelect.value : 'auto';
+    const organ = document.getElementById('plant-organ').value || 'auto';
+
     document.getElementById('plantnet-upload-area').classList.add('hidden');
     document.getElementById('plantnet-loading').classList.remove('hidden');
-    let compressedFile;
+
     try {
-        const compressedDataUrl = await compressImage(file, 800, 0.7); 
+        const compressedDataUrl = await compressImage(file, 1024, 0.6); 
         const res = await fetch(compressedDataUrl);
-        compressedFile = await res.blob();
-    } catch (e) { compressedFile = file; }
-    const formData = new FormData();
-    formData.append('images', compressedFile);
-    formData.append('organs', organ); 
-    const url = `https://my-api.plantnet.org/v2/identify/all?include-related-images=true&no-reject=false&lang=fr&api-key=${PLANTNET_API_KEY}`;
-    try {
+        const blob = await res.blob();
+
+        const formData = new FormData();
+        formData.append('images', blob);
+        formData.append('organs', organ); 
+
+        const url = `https://my-api.plantnet.org/v2/identify/all?include-related-images=true&no-reject=false&lang=fr&api-key=${PLANTNET_API_KEY}`;
+        
         const response = await fetch(url, { method: 'POST', body: formData });
+        
+        // --- MODIFICATION POUR LE DIAGNOSTIC ---
+        if (!response.ok) {
+            const errorText = await response.text(); // On lit le message caché du serveur
+            // On nettoie le message pour qu'il soit lisible dans l'alerte
+            let cleanError = errorText.replace(/"/g, '').substring(0, 100);
+            throw new Error(`Code ${response.status} : ${cleanError}`);
+        }
+        // ---------------------------------------
+        
         const data = await response.json();
+        
         document.getElementById('plantnet-loading').classList.add('hidden');
         document.getElementById('plantnet-results').classList.remove('hidden');
-        if (data.results && data.results.length > 0) { displayPlantResults(data.results); } 
-        else { document.getElementById('plantnet-results').innerHTML = "<p style='text-align:center;'>🤔 Aucune correspondance trouvée. Essaie une photo plus nette.</p>"; document.getElementById('plantnet-upload-area').classList.remove('hidden'); }
-    } catch (error) { console.error(error); alert("Erreur de connexion à Pl@ntNet. Vérifie ta clé API ou ta connexion internet."); closePlantNetModal(); }
+        
+        if (data.results && data.results.length > 0) { 
+            displayPlantResults(data.results); 
+        } else { 
+            document.getElementById('plantnet-results').innerHTML = "<p>🌱 Aucune plante reconnue.<br>Essaie de te rapprocher.</p><button onclick='openPlantNetModal()' class='btn-confirm'>Réessayer</button>"; 
+        }
+
+    } catch (error) { 
+        console.error(error); 
+        document.getElementById('plantnet-loading').classList.add('hidden');
+        document.getElementById('plantnet-upload-area').classList.remove('hidden');
+        // Affiche le vrai message d'erreur à l'écran
+        alert("🚨 ERREUR DÉTECTÉE :\n" + error.message); 
+    }
     input.value = "";
 }
+
 function displayPlantResults(results) { const container = document.getElementById('plantnet-results'); container.innerHTML = "<h4 style='margin:0 0 10px 0;'>Résultats probables :</h4>"; const top3 = results.slice(0, 3); top3.forEach(res => { const scorePct = Math.round(res.score * 100); const scientificName = res.species.scientificNameWithoutAuthor; const commonName = (res.species.commonNames && res.species.commonNames.length > 0) ? res.species.commonNames[0] : scientificName; const refImage = (res.images && res.images.length > 0) ? res.images[0].url.m : ""; const html = `<div class="plant-result-card">${refImage ? `<img src="${refImage}" class="plant-thumb">` : ""}<div class="plant-info"><span class="plant-name">${commonName}</span><span class="plant-sci">${scientificName}</span><div class="score-container"><div class="score-bar" style="width:${scorePct}%"></div></div><small style="color:${scorePct>80?'green':'orange'}">${scorePct}% de confiance</small><br><button class="btn-add-plant" onclick="addIdentifiedPlant('${commonName.replace(/'/g, "\\'")}')">📍 Ajouter à la carte</button></div></div>`; container.innerHTML += html; }); container.innerHTML += "<button onclick='openPlantNetModal()' style='width:100%; margin-top:10px; padding:10px;'>🔄 Nouvelle Photo</button>"; }
 function addIdentifiedPlant(plantName) { closePlantNetModal(); if(userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("Point placé au centre de l'écran"); } openModal(); document.getElementById('input-emoji').value = "🌿"; document.getElementById('input-note').value = plantName; }
 
 // --- 15. IMPORT PHOTO ---
-function handleGeoPhoto(input) { if (!input.files || !input.files[0]) return; const file = input.files[0]; EXIF.getData(file, async function() { const lat = EXIF.getTag(this, "GPSLatitude"); const latRef = EXIF.getTag(this, "GPSLatitudeRef"); const lng = EXIF.getTag(this, "GPSLongitude"); const lngRef = EXIF.getTag(this, "GPSLongitudeRef"); if (!lat || !lng) { alert("⚠️ Pas de coordonnées GPS trouvées !"); return; } const exifDate = EXIF.getTag(this, "DateTimeOriginal") || EXIF.getTag(this, "DateTime"); let dateStr = new Date().toLocaleDateString(); if (exifDate) { const parts = exifDate.split(" "); if (parts.length > 0) { const dateParts = parts[0].split(":"); if (dateParts.length === 3) { dateStr = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`; } } } const toDecimal = (number, ref) => { let decimal = number[0] + number[1] / 60 + number[2] / 3600; return (ref === "S" || ref === "W") ? -decimal : decimal; }; const finalLat = toDecimal(lat, latRef); const finalLng = toDecimal(lng, lngRef); const photoData = await compressImage(file, 800, 0.7); tempImportedPhoto = { date: dateStr, photo: photoData }; tempLatLng = { lat: finalLat, lng: finalLng }; map.setView(tempLatLng, 18); openModal(); document.getElementById('input-emoji').value = "📷"; document.getElementById('input-note').value = `Photo du ${dateStr}`; showToast("📍 Photo localisée !"); }); input.value = ""; }
-
-// --- 16. BEGOLEDEX ---
-function openBegoledex() { const grid = document.getElementById('begoledex-grid'); grid.innerHTML = ""; const speciesMap = {}; const natureEmojis = ["🌿", "🍄", "🌸", "🌺", "🌻", "🌲", "🌳", "🌴", "🌵", "🌾", "🍁", "🍂", "🍃", "🍄", "🌰", "🐚", "🪨", "🪵", "🌱"]; savedPoints.forEach(p => { let rawName = p.note.trim(); if (rawName.length > 2 && natureEmojis.includes(p.emoji)) { const key = rawName.toLowerCase(); if (!speciesMap[key]) { speciesMap[key] = { name: rawName, count: 0, emoji: p.emoji, photo: null }; } speciesMap[key].count++; if (!speciesMap[key].photo && p.history && p.history.length > 0) { const entryWithPhoto = p.history.find(h => h.photo); if (entryWithPhoto) { speciesMap[key].photo = entryWithPhoto.photo; } } } }); const speciesList = Object.values(speciesMap).sort((a, b) => b.count - a.count); document.getElementById('begoledex-count').innerText = speciesList.length; const pct = Math.min(100, (speciesList.length / 50) * 100); document.getElementById('begoledex-bar').style.width = `${pct}%`; if (speciesList.length === 0) { grid.innerHTML = "<div style='grid-column: span 2; text-align:center; padding:20px; color:#999;'>Aucune espèce répertoriée.<br>Utilise Pl@ntNet ou ajoute des points avec des émojis nature (🌿, 🍄...) !</div>"; } else { speciesList.forEach(s => { const html = `<div class="species-card"><div class="species-img-container">${s.photo ? `<img src="${s.photo}" class="species-img">` : `<div class="species-emoji-placeholder">${s.emoji}</div>`}</div><div class="species-name">${s.name}</div><div class="species-count">Trouvé ${s.count} fois</div></div>`; grid.innerHTML += html; }); } document.getElementById('modal-begoledex').classList.remove('hidden'); toggleMenu(); }
-function closeBegoledex() { document.getElementById('modal-begoledex').classList.add('hidden'); }
+function handleGeoPhoto(input) { 
+    if (!input.files || !input.files[0]) return; 
+    const file = input.files[0]; 
+    if (file.type === "image/heic" || file.name.toLowerCase().endsWith(".heic")) { alert("⚠️ Format HEIC détecté. Utilise JPEG."); return; }
+    showToast("⏳ Analyse GPS...");
+    EXIF.getData(file, async function() { 
+        const lat = EXIF.getTag(this, "GPSLatitude"); const lng = EXIF.getTag(this, "GPSLongitude"); 
+        if (!lat || !lng) { alert("⚠️ Aucune coordonnée GPS trouvée !"); return; } 
+        const toDecimal = (number, ref) => { let decimal = number[0] + number[1] / 60 + number[2] / 3600; return (ref === "S" || ref === "W") ? -decimal : decimal; }; 
+        const finalLat = toDecimal(lat, EXIF.getTag(this, "GPSLatitudeRef")||"N"); 
+        const finalLng = toDecimal(lng, EXIF.getTag(this, "GPSLongitudeRef")||"E"); 
+        const photoData = await compressImage(file, 800, 0.7); 
+        let dateStr = new Date().toLocaleDateString(); const exifDate = EXIF.getTag(this, "DateTimeOriginal");
+        if(exifDate) { const parts = exifDate.split(" ")[0].split(":"); if(parts.length === 3) dateStr = `${parts[2]}/${parts[1]}/${parts[0]}`; }
+        tempImportedPhoto = { date: dateStr, photo: photoData }; tempLatLng = { lat: finalLat, lng: finalLng }; 
+        map.setView(tempLatLng, 18); openModal(); document.getElementById('input-emoji').value = "📷"; document.getElementById('input-note').value = `Photo du ${dateStr}`; showToast("📍 Photo localisée !"); 
+    }); 
+    input.value = ""; 
+}
 
 // ============================================================
-// --- 17. AR (CORRIGÉ) ---
+// --- 17. AR ---
 // ============================================================
-var arInterval = null; var isARRunning = false;
-async function startAR() { if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert("⚠️ Caméra non supportée."); return; } document.getElementById('ar-screen').classList.add('ar-visible'); document.getElementById('ar-screen').classList.remove('hidden'); toggleMenu(); try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); document.getElementById('ar-video').srcObject = stream; } catch (e) { alert("Erreur Caméra : " + e); stopAR(); return; } isARRunning = true; if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') { DeviceOrientationEvent.requestPermission(); } window.addEventListener('deviceorientation', handleAROrientation); arInterval = setInterval(updateARMarkers, 50); showToast("🕶️ AR Activée (Max 1km)"); }
+var arInterval = null; var isARRunning = false; var deviceHeading = 0;
+function startAR() { 
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert("⚠️ Caméra non supportée."); return; } 
+    document.getElementById('ar-screen').classList.add('ar-visible'); document.getElementById('ar-screen').classList.remove('hidden'); toggleMenu(); 
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => { document.getElementById('ar-video').srcObject = stream; }).catch(e => { alert("Erreur Caméra : " + e); stopAR(); });
+    isARRunning = true; 
+    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') { DeviceOrientationEvent.requestPermission(); } 
+    window.addEventListener('deviceorientation', handleAROrientation); arInterval = setInterval(updateARMarkers, 50); showToast("🕶️ AR Activée (Max 1km)"); 
+}
 function stopAR() { isARRunning = false; document.getElementById('ar-screen').classList.remove('ar-visible'); const video = document.getElementById('ar-video'); if (video.srcObject) { video.srcObject.getTracks().forEach(track => track.stop()); video.srcObject = null; } window.removeEventListener('deviceorientation', handleAROrientation); if (arInterval) clearInterval(arInterval); }
+function handleAROrientation(event) { if (event.webkitCompassHeading) { deviceHeading = event.webkitCompassHeading; } else if (event.alpha) { deviceHeading = 360 - event.alpha; } }
+function updateARMarkers() {
+    if (!isARRunning || !userMarker) return;
+    const container = document.getElementById('ar-points-container'); container.innerHTML = ""; 
+    const userLL = userMarker.getLatLng(); const fov = 60; 
+    savedPoints.forEach(p => {
+        const dist = map.distance(userLL, [p.lat, p.lng]); if (dist > 1000) return; 
+        const bearing = getBearing(userLL.lat, userLL.lng, p.lat, p.lng);
+        let diff = bearing - deviceHeading; while (diff < -180) diff += 360; while (diff > 180) diff -= 360;
+        if (Math.abs(diff) < (fov / 2)) {
+            const x = (0.5 + (diff / fov)) * window.innerWidth;
+            const el = document.createElement('div'); el.className = 'ar-marker'; el.innerHTML = `<span style="font-size:20px">${p.emoji}</span><br><b>${Math.round(dist)}m</b>`; el.style.left = `${x}px`; el.style.top = "50%"; container.appendChild(el);
+        }
+    });
+}
+function getBearing(startLat, startLng, destLat, destLng) {
+    const startLatRad = startLat * (Math.PI / 180); const startLngRad = startLng * (Math.PI / 180); const destLatRad = destLat * (Math.PI / 180); const destLngRad = destLng * (Math.PI / 180);
+    const y = Math.sin(destLngRad - startLngRad) * Math.cos(destLatRad); const x = Math.cos(startLatRad) * Math.sin(destLatRad) - Math.sin(startLatRad) * Math.cos(destLatRad) * Math.cos(destLngRad - startLngRad);
+    return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
 
 // ============================================================
-// --- 18. GUIDE DU PISTEUR (EMPREINTES) ---
+// --- 18. GUIDE DU PISTEUR ---
 // ============================================================
 const animalTracks = [ { name: "Sanglier", icon: "🐗", desc: "Deux gros sabots + deux 'gardes' marqués à l'arrière. Lourd.", size: "6 - 9 cm" }, { name: "Chevreuil", icon: "🦌", desc: "Sabots fins en cœur ❤️. Les gardes ne marquent que dans la boue.", size: "4 - 5 cm" }, { name: "Renard", icon: "🦊", desc: "Forme ovale. 4 doigts. Les griffes sont visibles.", size: "5 cm" }, { name: "Blaireau", icon: "🦡", desc: "5 doigts alignés (petite main d'ours). Longues griffes.", size: "5 - 7 cm" }, { name: "Lièvre / Lapin", icon: "🐇", desc: "Déplacement en 'Y'. Grandes pattes arrière devant.", size: "Variable" }, { name: "Chien", icon: "🐕", desc: "Pattes rondes, 4 doigts. Moins symétrique que le renard.", size: "Variable" }, { name: "Oiseau", icon: "🐦", desc: "3 doigts devant, 1 derrière.", size: "Petit" }, { name: "Écureuil", icon: "🐿️", desc: "4 doigts avant, 5 arrière. Au pied des arbres.", size: "3 - 4 cm" } ];
 function openPisteur() { const grid = document.getElementById('pisteur-grid'); grid.innerHTML = ""; animalTracks.forEach(t => { const html = `<div class="track-card"><div class="track-icon">${t.icon}</div><div class="track-name">${t.name}</div><div class="track-desc">${t.desc}</div><div class="track-size">📏 ${t.size}</div></div>`; grid.innerHTML += html; }); document.getElementById('modal-pisteur').classList.remove('hidden'); toggleMenu(); }
 function closePisteur() { document.getElementById('modal-pisteur').classList.add('hidden'); }
 
 // ============================================================
-// --- 19. SHAKE TO POINT (SECOUER POUR CRÉER POINT) ---
+// --- 19. SHAKE TO POINT ---
 // ============================================================
-var lastShakeX = 0, lastShakeY = 0, lastShakeZ = 0;
-var lastShakeTime = 0;
-const SHAKE_THRESHOLD = 25; 
-
-function initShakeListener() {
-    if (window.DeviceMotionEvent) {
-        window.addEventListener('devicemotion', handleShake, false);
-    } else { console.log("⚠️ Shake non supporté sur cet appareil."); }
-}
-function handleShake(e) {
-    var acc = e.accelerationIncludingGravity;
-    if (!acc) return;
-    var currTime = Date.now();
-    if ((currTime - lastShakeTime) > 2000) {
-        var diff = Math.abs(acc.x + acc.y + acc.z - lastShakeX - lastShakeY - lastShakeZ);
-        if (diff > SHAKE_THRESHOLD) { triggerShakeAction(); lastShakeTime = currTime; }
-        lastShakeX = acc.x; lastShakeY = acc.y; lastShakeZ = acc.z;
-    }
-}
-function triggerShakeAction() {
-    triggerHaptic('success'); 
-    if (userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("⚠️ GPS non fixé : Point au centre"); }
-    openModal();
-    document.getElementById('input-emoji').value = "📍"; 
-    document.getElementById('input-note').value = "Point Shake 🫨";
-    showToast("📍 Shake ! Nouveau point créé.");
-}
-
-// ============================================================
-// --- 20. DÉTECTEUR DE MÉTAUX (MAGNETOMETER) ---
-// ============================================================
-let magSensor = null;
-let metalAudioContext = null;
-let metalOscillator = null;
-let metalGain = null;
-let isMetalRunning = false;
-
-function openMetalDetector() {
-    toggleMenu(); // Ferme le menu
-    document.getElementById('modal-metal').classList.remove('hidden');
-    startMetalSensor();
-}
-
-function closeMetalDetector() {
-    document.getElementById('modal-metal').classList.add('hidden');
-    stopMetalSensor();
-}
-
-function startMetalSensor() {
-    if ('Magnetometer' in window) {
-        try {
-            // Fréquence de 60Hz pour être réactif
-            magSensor = new Magnetometer({ frequency: 60 });
-            magSensor.addEventListener('reading', updateMetalUI);
-            magSensor.start();
-            isMetalRunning = true;
-            
-            // Initialisation Audio (Bruitages Geiger)
-            initMetalAudio();
-            showToast("🧲 Capteur activé");
-        } catch (error) {
-            console.error(error);
-            alert("Erreur capteur : " + error.message);
-        }
-    } else {
-        alert("⚠️ Ton téléphone ne semble pas supporter l'API Magnétomètre (ou navigateur incompatible). Essaie sur Chrome Android.");
-    }
-}
-
-function stopMetalSensor() {
-    if (magSensor) {
-        magSensor.removeEventListener('reading', updateMetalUI);
-        magSensor.stop();
-        magSensor = null;
-    }
-    stopMetalAudio();
-    isMetalRunning = false;
-}
-
-function updateMetalUI() {
-    if (!magSensor) return;
-
-    // Calcul de la magnitude totale du champ magnétique (x, y, z)
-    // L'unité est le microtesla (µT)
-    const x = magSensor.x;
-    const y = magSensor.y;
-    const z = magSensor.z;
-    const totalField = Math.sqrt(x*x + y*y + z*z);
-
-    // Mise à jour Texte
-    document.getElementById('metal-val').innerText = totalField.toFixed(1) + " µT";
-
-    // Mise à jour Barre (Calibration : Terre ~45µT, Aimant > 100µT)
-    // On enlève environ 40µT (champ terrestre de base) pour ne voir que les variations
-    let visualValue = totalField - 40; 
-    if (visualValue < 0) visualValue = 0;
-    
-    // On considère que 200µT c'est le max pour la barre
-    let percentage = (visualValue / 100) * 100; 
-    if (percentage > 100) percentage = 100;
-    
-    document.getElementById('metal-bar').style.height = percentage + "%";
-
-    // Feedback Sonore & Haptique
-    updateMetalSound(visualValue);
-}
-
-// --- AUDIO TYPE "COMPTEUR GEIGER" ---
-function initMetalAudio() {
-    try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        metalAudioContext = new AudioContext();
-    } catch(e) {}
-}
-
-let lastClickTime = 0;
-
-function updateMetalSound(intensity) {
-    // intensity va de 0 à 100+
-    // Plus c'est haut, plus on clique vite
-    
-    if (intensity < 10) return; // Silence si champ normal
-
-    // Seuil de détection "fort" pour vibrer
-    if (intensity > 50) {
-        // Vibration seulement si très fort
-        if (Date.now() % 20 === 0) triggerHaptic(10); 
-    }
-
-    // Intervalle entre les clics (en ms)
-    // 10µT -> lent (500ms), 100µT -> très rapide (50ms)
-    let interval = 500 - (intensity * 4);
-    if (interval < 40) interval = 40;
-
-    if (Date.now() - lastClickTime > interval) {
-        playGeigerClick();
-        lastClickTime = Date.now();
-    }
-}
-
-function playGeigerClick() {
-    if (!metalAudioContext) return;
-    
-    const osc = metalAudioContext.createOscillator();
-    const gain = metalAudioContext.createGain();
-    
-    osc.connect(gain);
-    gain.connect(metalAudioContext.destination);
-    
-    osc.type = 'square'; // Son un peu "sale" comme un vrai compteur
-    osc.frequency.value = 400 + Math.random() * 200; // Fréquence aléatoire pour réalisme
-    
-    gain.gain.setValueAtTime(0.1, metalAudioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, metalAudioContext.currentTime + 0.05);
-    
-    osc.start();
-    osc.stop(metalAudioContext.currentTime + 0.05);
-}
-
-function stopMetalAudio() {
-    if (metalAudioContext) {
-        metalAudioContext.close();
-        metalAudioContext = null;
-    }
-}
+var lastShakeX = 0, lastShakeY = 0, lastShakeZ = 0; var lastShakeTime = 0; const SHAKE_THRESHOLD = 25; 
+function initShakeListener() { if (window.DeviceMotionEvent) { window.addEventListener('devicemotion', handleShake, false); } }
+function handleShake(e) { var acc = e.accelerationIncludingGravity; if (!acc) return; var currTime = Date.now(); if ((currTime - lastShakeTime) > 2000) { var diff = Math.abs(acc.x + acc.y + acc.z - lastShakeX - lastShakeY - lastShakeZ); if (diff > SHAKE_THRESHOLD) { triggerShakeAction(); lastShakeTime = currTime; } lastShakeX = acc.x; lastShakeY = acc.y; lastShakeZ = acc.z; } }
+function triggerShakeAction() { triggerHaptic('success'); if (userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("⚠️ GPS non fixé : Point au centre"); } openModal(); document.getElementById('input-emoji').value = "📍"; document.getElementById('input-note').value = "Point Shake 🫨"; showToast("📍 Shake ! Nouveau point créé."); }
