@@ -15,6 +15,10 @@
     <title>Bégole Map 🌳</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -31,7 +35,6 @@
     </div>
 
     <button id="btn-compass" onclick="toggleCompass()">🧭</button>
-
     <button id="btn-recenter" class="hidden" onclick="enableAutoCenter()">🎯</button>
 
     <div id="recording-container" class="hidden">
@@ -40,21 +43,9 @@
     </div>
 
     <div id="dashboard" class="hidden">
-        <div class="dash-item">
-            <span class="dash-val" id="dash-alt">--</span>
-            <span class="dash-unit">m</span>
-            <span class="dash-label">Alt.</span>
-        </div>
-        <div class="dash-item">
-            <span class="dash-val" id="dash-speed">--</span>
-            <span class="dash-unit">km/h</span>
-            <span class="dash-label">Vit.</span>
-        </div>
-        <div class="dash-item">
-            <span class="dash-val" id="dash-dist">0.0</span>
-            <span class="dash-unit">km</span>
-            <span class="dash-label">Dist.</span>
-        </div>
+        <div class="dash-item"><span class="dash-val" id="dash-alt">--</span><span class="dash-unit">m</span></div>
+        <div class="dash-item"><span class="dash-val" id="dash-speed">--</span><span class="dash-unit">km/h</span></div>
+        <div class="dash-item"><span class="dash-val" id="dash-dist">0.0</span><span class="dash-unit">km</span></div>
     </div>
 
     <div id="pocket-overlay" class="hidden-poche">
@@ -71,300 +62,205 @@
         
         <div id="menu-items" class="hidden-mobile">
             
-            <div class="astro-widget">
-                <div id="astro-moon" title="Phase Lunaire">🌑 --%</div>
-                <div style="width:1px; background:rgba(255,255,255,0.3); height:20px;"></div>
-                <div id="astro-sun" title="Temps avant coucher du soleil">☀️ --h--</div>
-            </div>
-
-            <div class="weather-widget" onclick="updateWeatherWidget()" title="Cliquer pour mettre à jour">
-                <div id="weather-temp">🌡️ --°C</div>
-                <div style="width:1px; background:rgba(255,255,255,0.3); height:20px;"></div>
-                <div id="weather-rain">🌧️ --mm</div>
-                <div style="width:1px; background:rgba(255,255,255,0.3); height:20px;"></div>
-                <div id="weather-desc" style="font-size:10px; max-width:60px; overflow:hidden; white-space:nowrap;">--</div>
-            </div>
-            
-            <hr>
-            
-            <label style="color:#333; border-bottom:1px solid #eee; padding-bottom:5px;">👁️ Affichage & Outils</label>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:5px; margin-bottom:5px;">
-                <span style="font-size:13px; color:#8e44ad; font-weight:bold;">📡 Radar Proximité (40m)</span>
-                <label class="switch">
-                  <input type="checkbox" id="radar-toggle" onchange="toggleRadar()">
-                  <span class="slider round"></span>
-                </label>
-            </div>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; margin-top:5px;">
-                <span style="font-size:13px; color:var(--text-main);">🏰 Frontières Bégole</span>
-                <label class="switch">
-                  <input type="checkbox" id="borders-toggle" onchange="toggleBorders()" checked>
-                  <span class="slider round"></span>
-                </label>
-            </div>
-            
-            <hr>
-
-            <label style="color:#e67e22;">🏠 Gestion Cadastre</label>
-            
-            <div id="cadastre-opacity-container" class="hidden" style="margin-top:5px; margin-bottom:10px; padding: 5px; background:rgba(230, 126, 34, 0.1); border-radius:10px;">
-                <label style="font-size:10px; color:#e67e22; margin-bottom:2px; display:block;">Transparence Calque :</label>
-                <input type="range" min="0" max="1" step="0.1" value="1" style="width:100%;" oninput="updateCadastreOpacity(this.value)">
-            </div>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:5px;">
-                <span style="font-size:13px; color:var(--text-main); font-weight:bold;">Mode Sélection</span>
-                <label class="switch">
-                  <input type="checkbox" id="cadastre-mode-toggle" onchange="toggleCadastreMode()">
-                  <span class="slider round"></span>
-                </label>
-            </div>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; margin-top:5px;">
-                <span style="font-size:13px; color:var(--text-main);">👁️ Voir mes parcelles</span>
-                <label class="switch">
-                  <input type="checkbox" id="show-parcels-toggle" onchange="toggleSavedParcels()">
-                  <span class="slider round"></span>
-                </label>
-            </div>
-
-            <button onclick="showCadastreStats()" style="background-color:#f39c12; font-size:12px; margin-bottom:5px;">📊 Stats Cadastre (Surfaces)</button>
-            <button onclick="clearParcels()" style="background-color:#d35400; font-size:12px; margin-bottom:10px;">🗑️ Effacer parcelles coloriées</button>
-            
-            <hr>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-                <span style="font-size:13px; color:#c0392b; font-weight:bold;">🔥 Heatmap (Zones fréquentes)</span>
-                <label class="switch">
-                  <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()">
-                  <span class="slider round"></span>
-                </label>
-            </div>
-
-            <hr>
-
-            <div class="menu-section-filter">
-                <label>📅 Filtrer par Année :</label>
-                <select id="filter-year" onchange="applyYearFilter()" class="year-select">
-                    <option value="all">Toutes les années</option>
-                </select>
-
-                <label style="margin-top:5px;">🍂 Filtrer par Mois (Saison) :</label>
-                <select id="filter-month" onchange="applyMonthFilter()" class="year-select">
-                    <option value="all">Tous les mois</option>
-                    <option value="1">Janvier</option>
-                    <option value="2">Février</option>
-                    <option value="3">Mars</option>
-                    <option value="4">Avril</option>
-                    <option value="5">Mai</option>
-                    <option value="6">Juin</option>
-                    <option value="7">Juillet</option>
-                    <option value="8">Août</option>
-                    <option value="9">Septembre</option>
-                    <option value="10">Octobre</option>
-                    <option value="11">Novembre</option>
-                    <option value="12">Décembre</option>
-                </select>
-
-                <label style="margin-top:10px;">🔍 Filtrer par émoji :</label>
-                <div class="filter-row">
-                    <input type="text" id="filter-input" placeholder=" " maxlength="2">
-                    <button onclick="applyFilter()" class="btn-filter-ok">Ok</button>
-                    <button onclick="resetFilter()" class="btn-filter-reset">Tout</button>
+            <div class="profile-header">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                    <span id="user-title" style="font-weight:800; font-size:16px; color:var(--text-main);">Vagabond</span>
+                    <span id="user-lvl" class="level-badge">Niv. 1</span>
                 </div>
-
-                <label style="margin-top:10px;">📝 Recherche texte :</label>
-                <div class="filter-row">
-                    <input type="text" id="text-filter-input" placeholder="Ex: chêne..." style="width: 100%;">
+                <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-sub);">
+                    <span>XP Progression</span>
+                    <span id="user-xp-text">0 / 1000</span>
                 </div>
-                <button onclick="applyTextFilter()" class="btn-search" style="margin-top:5px; padding: 6px;">Chercher</button>
+                <div class="xp-bar-container"><div id="user-xp-bar" class="xp-bar-fill"></div></div>
             </div>
-            
-            <hr>
 
-            <label style="font-size:12px; font-weight:bold; color:#666; margin-bottom:5px; display:block;">👣 Traceur</label>
-            
-            <button onclick="toggleTracking()" id="btn-tracking" class="btn-start-track">▶️ Démarrer Trajet</button>
-            <button onclick="openHistory()" class="btn-history">📜 Historique Trajets</button>
-            <button onclick="togglePocketMode()" style="background-color:#34495e;">🌑 Mode Poche</button>
-            
-            <div id="wake-status" style="font-size:10px; color:#999; text-align:right; margin-bottom:5px; margin-top: 2px;"></div>
-            
-            <hr>
-
-            <button onclick="showStats()" class="btn-stats">📊 Statistiques Générales</button>
-            
-            <button onclick="showAchievements()" class="btn-achievements" style="background-color:#f1c40f; color:#333; margin-top:5px;">🏆 Succès & Badges</button>
-            
-            <button onclick="toggleLocation()" id="btn-loc" class="btn-loc" style="margin-top:5px;">📍 Ma position</button>
-            
-            <hr>
-            
-            <div class="storage-container">
-                <div class="storage-header">
-                    <span>💾 Mémoire Téléphone</span>
-                    <span id="storage-text">0%</span>
-                </div>
-                <div class="storage-track">
-                    <div id="storage-bar" class="storage-fill"></div>
+            <div class="env-row">
+                <div class="astro-widget"><div id="astro-moon">🌑 --%</div></div>
+                <div class="weather-widget" onclick="updateWeatherWidget()">
+                    <div id="weather-temp">🌡️ --°C</div>
+                    <div id="weather-wind" style="font-size:11px; display:flex; align-items:center; gap:5px; margin-top:2px;">
+                        🌬️ -- <span id="wind-arrow" style="display:inline-block;">⬆️</span>
+                    </div>
+                    <div id="weather-desc" style="font-size:10px; margin-top:2px;">--</div>
                 </div>
             </div>
+            
+            <hr>
 
-            <button onclick="exportData()" class="btn-save" style="margin-top:5px;">💾 Sauvegarder Tout</button>
-            <button onclick="document.getElementById('fileInput').click()" class="btn-load">📂 Charger Sauvegarde</button>
-            <button onclick="clearData()" class="btn-danger">🗑️ Tout effacer</button>
+            <div class="menu-section-title">🚀 Outils d'Exploration</div>
+            <div class="tools-grid">
+                <button onclick="openPlantNetModal()" class="btn-grid" style="background:#27ae60;">
+                    <span class="grid-icon">🌿</span><span class="grid-text">Identifier<br>une Plante</span>
+                </button>
+                
+                <button onclick="openBegoledex()" class="btn-grid" style="background:#8e44ad;">
+                    <span class="grid-icon">📖</span><span class="grid-text">Ouvrir mon<br>Bégolédex</span>
+                </button>
+
+                <button onclick="startAR()" class="btn-grid" style="background:#e74c3c;">
+                    <span class="grid-icon">🕶️</span><span class="grid-text">Réalité<br>Augmentée</span>
+                </button>
+                
+                <label for="geophoto-input" class="btn-grid label-grid" style="background:#e67e22;">
+                    <span class="grid-icon">🖼️</span><span class="grid-text">Importer<br>une Photo</span>
+                    <input type="file" id="geophoto-input" accept="image/jpeg,image/png" style="opacity:0; position:absolute; z-index:-1;" onchange="handleGeoPhoto(this)">
+                </label>
+
+                <button onclick="openPisteur()" class="btn-grid" style="background:#795548;">
+                    <span class="grid-icon">🐾</span>
+                    <span class="grid-text">Guide du<br>Pisteur</span>
+                </button>
+                
+                <button onclick="openMetalDetector()" class="btn-grid" style="background: #607d8b;">
+                    <span class="grid-icon">🧲</span>
+                    <span class="grid-text">Détecteur<br>de Métaux</span>
+                </button>
+            </div>
+
+            <hr>
+
+            <div class="menu-section-title">👣 Navigation & Traceur</div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <button onclick="toggleTracking()" id="btn-tracking" class="btn-start-track" style="flex:2; height:50px;">▶️ Lancer<br>Trajet</button>
+                <button onclick="toggleLocation()" id="btn-loc" class="btn-loc" style="flex:1; justify-content:center; height:50px;">📍<br>Moi</button>
+            </div>
+            
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <button onclick="openHistory()" class="btn-history" style="flex:1; justify-content:center;">📜 Historique</button>
+                <button onclick="showStats()" class="btn-stats" style="flex:1; justify-content:center;">📊 Statistiques</button>
+            </div>
+            
+            <button onclick="togglePocketMode()" style="background-color:#34495e; font-size:12px; padding:10px; width:100%;">🌑 Mode Poche (Économie Batterie)</button>
+            <div id="wake-status" style="font-size:9px; color:#999; text-align:right; margin-top: 2px;"></div>
+
+            <hr>
+
+            <div class="menu-section-title">🗺️ Calques de Carte</div>
+
+            <div class="toggles-container">
+                <div class="toggle-row"><span>📡 Radar (40m)</span><label class="switch"><input type="checkbox" id="radar-toggle" onchange="toggleRadar()"><span class="slider round"></span></label></div>
+                <div class="toggle-row"><span>🏰 Frontières</span><label class="switch"><input type="checkbox" id="borders-toggle" onchange="toggleBorders()" checked><span class="slider round"></span></label></div>
+                <div class="toggle-row"><span>🔥 Heatmap</span><label class="switch"><input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()"><span class="slider round"></span></label></div>
+                <div class="toggle-row"><span style="color:#c0392b; font-weight:bold;">🙈 Mode Discret</span><label class="switch"><input type="checkbox" id="intruder-toggle" onchange="toggleIntruderMode()"><span class="slider round"></span></label></div>
+            </div>
+
+            <div style="background:rgba(230, 126, 34, 0.1); padding:10px; border-radius:10px; margin-top:8px;">
+                <div class="toggle-row"><span style="color:#e67e22; font-weight:bold;">🏠 Cadastre</span><label class="switch"><input type="checkbox" id="cadastre-mode-toggle" onchange="toggleCadastreMode()"><span class="slider round"></span></label></div>
+                <div style="display:flex; justify-content:space-between; margin-top:5px;"><span style="font-size:11px; color:#e67e22;">Voir mes parcelles</span><label class="switch" style="transform:scale(0.8);"><input type="checkbox" id="show-parcels-toggle" onchange="toggleSavedParcels()"><span class="slider round"></span></label></div>
+                <div id="cadastre-opacity-container" class="hidden" style="margin-top:5px;"><input type="range" min="0" max="1" step="0.1" value="1" style="width:100%;" oninput="updateCadastreOpacity(this.value)"></div>
+                <div style="display:flex; gap:5px; margin-top:5px;"><button onclick="showCadastreStats()" style="font-size:10px; padding:8px; background:#f39c12; justify-content:center;">📊 Bilan</button><button onclick="clearParcels()" style="font-size:10px; padding:8px; background:#d35400; justify-content:center;">🗑️ Vider</button></div>
+            </div>
+
+            <hr>
+
+            <details>
+                <summary class="menu-section-title" style="cursor:pointer; list-style:none;">🔍 Filtres & Recherche (▼)</summary>
+                <div class="menu-section-filter" style="margin-top:5px;">
+                    <select id="filter-year" onchange="applyYearFilter()" class="year-select"><option value="all">Années : Toutes</option></select>
+                    <select id="filter-month" onchange="applyMonthFilter()" class="year-select"><option value="all">Mois : Tous</option>
+                        <option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option>
+                    </select>
+                    <div class="filter-row">
+                        <input type="text" id="filter-input" placeholder="🍄" maxlength="2">
+                        <button onclick="applyFilter()" class="btn-filter-ok">Ok</button>
+                        <button onclick="resetFilter()" class="btn-filter-reset">Reset</button>
+                    </div>
+                    <div class="filter-row" style="margin-top:5px;">
+                        <input type="text" id="text-filter-input" placeholder="Chercher un nom..." style="width: 100%;">
+                        <button onclick="applyTextFilter()" class="btn-search" style="width:auto; padding:0 15px;">🔎</button>
+                    </div>
+                </div>
+            </details>
+            
+            <hr>
+            
+            <div class="storage-container"><div class="storage-header"><span>💾 Mémoire</span><span id="storage-text">0%</span></div><div class="storage-track"><div id="storage-bar" class="storage-fill"></div></div></div>
+            <div style="display:flex; gap:5px;"><button onclick="exportData()" class="btn-save" style="font-size:12px; justify-content:center;">Sauver</button><button onclick="document.getElementById('fileInput').click()" class="btn-load" style="font-size:12px; justify-content:center;">Charger</button><button onclick="clearData()" class="btn-danger" style="font-size:12px; justify-content:center;">Raz</button></div>
         </div>
-        
         <input type="file" id="fileInput" style="display: none" onchange="importData(this)">
     </div>
 
-    <div id="modal-overlay" class="hidden">
-        <div class="modal-box">
-            <h3>Nouveau Point 📍</h3>
-            <label>Émoji :</label>
-            <input type="text" id="input-emoji" placeholder=" " value="📍" style="font-size: 24px; text-align: center; width: 60px;">
-            <label>Description :</label>
-            <textarea id="input-note" placeholder="Ex: Coin à cèpes..."></textarea>
-            <div id="point-env-info" style="text-align:center; font-size:11px; color:#8e44ad; font-weight:bold; margin-bottom:10px;"></div>
-            <div class="modal-buttons">
-                <button onclick="closeModal()" class="btn-cancel">Annuler</button>
-                <button onclick="confirmAddPoint()" class="btn-confirm">Valider</button>
-            </div>
-        </div>
-    </div>
+    <div id="modal-overlay" class="hidden"><div class="modal-box"><h3>Nouveau Point 📍</h3><label>Émoji :</label><input type="text" id="input-emoji" placeholder=" " value="📍" style="font-size: 24px; text-align: center; width: 60px;"><label>Description :</label><textarea id="input-note" placeholder="Ex: Coin à cèpes..."></textarea><div id="point-env-info" style="text-align:center; font-size:11px; color:#8e44ad; font-weight:bold; margin-bottom:10px;"></div><div class="modal-buttons"><button onclick="closeModal()" class="btn-cancel">Annuler</button><button onclick="confirmAddPoint()" class="btn-confirm">Valider</button></div></div></div>
+    
+    <div id="modal-edit-point" class="hidden"><div class="modal-box"><h3 style="background-color:#3498db;">📝 Carnet & Modif</h3><div style="padding: 10px 15px;"><div style="display:flex; gap:5px;"><input type="text" id="edit-emoji" style="width:50px; text-align:center; font-size:20px;"><input type="text" id="edit-note" style="flex:1;"></div></div><label style="margin: 0 15px;">📜 Historique des prises :</label><div id="history-list-container" class="history-list"></div><div class="history-add-container"><input type="text" id="new-history-entry" placeholder="Ex: 3kg, 5 beaux..."><div id="history-env-info" style="text-align:right; font-size:10px; color:#8e44ad; font-weight:bold; margin-bottom:3px; margin-top:2px;"></div><div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;"><label for="history-photo-input" class="btn-photo-label">📷 Photo<input type="file" id="history-photo-input" accept="image/*" capture="environment" style="display:none" onchange="previewPhotoCount()"></label><span id="photo-status" style="font-size:10px; color:#27ae60; display:none;">Image sélectionnée !</span><button class="btn-add-history" onclick="addHistoryToCurrentPoint()">➕ Ajouter</button></div></div><div class="modal-buttons" style="margin-top:10px;"><button onclick="deleteCurrentPoint()" class="btn-danger">Supprimer Point</button><button onclick="savePointEdits()" class="btn-confirm">Fermer</button></div></div></div>
+    
+    <div id="modal-parcel" class="hidden"><div class="modal-box"><h3 style="background-color:#e67e22;">Parcelle Détectée 🏠</h3><p id="parcel-ref" style="text-align:center; font-weight:bold; color:#666; margin:10px 0 5px 0; font-size:14px;">Ref: ...</p><p id="parcel-area" style="text-align:center; margin:0 0 15px 0; line-height:1.2;"></p><label>Couleur :</label><div class="color-picker-row"><div class="color-option" style="background:#e74c3c;" onclick="selectColor('#e74c3c', this)"></div><div class="color-option" style="background:#3498db;" onclick="selectColor('#3498db', this)"></div><div class="color-option" style="background:#f1c40f;" onclick="selectColor('#f1c40f', this)"></div><div class="color-option" style="background:#2ecc71;" onclick="selectColor('#2ecc71', this)"></div><div class="color-option" style="background:#9b59b6;" onclick="selectColor('#9b59b6', this)"></div><div class="color-option selected" style="background:#95a5a6;" onclick="selectColor('#95a5a6', this)"></div></div><label>Note / Propriétaire :</label><input type="text" id="parcel-note" placeholder="Ex: Cassoulat"><div class="modal-buttons"><button onclick="closeParcelModal()" class="btn-cancel">Annuler</button><button onclick="confirmSaveParcel()" class="btn-confirm" style="background-color:#e67e22;">Colorier</button></div></div></div>
+    
+    <div id="modal-edit-trip" class="hidden"><div class="modal-box"><h3 style="background-color:#8e44ad;">✏️ Note du Trajet</h3><label>Note / Météo / Champignons trouvés :</label><textarea id="edit-trip-note" placeholder="Ex: Rando sous la pluie, rien trouvé..."></textarea><div class="modal-buttons"><button onclick="closeEditTripModal()" class="btn-cancel">Annuler</button><button onclick="confirmSaveTripNote()" class="btn-confirm" style="background-color:#8e44ad;">Sauvegarder</button></div></div></div>
+    
+    <div id="stats-overlay" class="hidden" onclick="closeStats()"><div class="modal-box" onclick="event.stopPropagation()"><h3>📊 Mes Stats</h3><div id="stats-content" style="text-align: left; margin-bottom: 20px;"></div><button onclick="closeStats()" class="btn-confirm" style="width:100%">Fermer</button></div></div>
+    
+    <div id="modal-cadastre-stats" class="hidden" onclick="closeCadastreStats()"><div class="modal-box" onclick="event.stopPropagation()"><h3 style="background-color:#f39c12;">🏠 Bilan Foncier</h3><div id="cadastre-stats-content" style="padding:15px; text-align: left;"></div><button onclick="closeCadastreStats()" class="btn-confirm" style="width:100%; margin: 0 0 15px 0;">Fermer</button></div></div>
+    
+    <div id="history-overlay" class="hidden" onclick="closeHistory()"><div class="modal-box" onclick="event.stopPropagation()" style="max-height: 80vh; display:flex; flex-direction:column;"><h3>👣 Mes Trajets</h3><div style="padding:10px 15px 0 15px;"><select id="filter-trip-class" onchange="renderHistoryList()" class="year-select" style="margin-bottom:5px;"><option value="all">Tout voir</option><option value="blue">🟦 Petites (< 2km)</option><option value="green">🟩 Moyennes (2-5km)</option><option value="orange">🟧 Grandes (5-10km)</option><option value="red">🟥 Ultra (> 10km)</option></select><button class="btn-load" onclick="showAllTrips()" style="width:100%; font-size:12px; margin-bottom:5px;">👁️ Tout afficher en couleur</button><button class="btn-cancel" onclick="clearMapLayers()" style="width:100%; font-size:12px;">❌ Effacer les tracés</button></div><div id="tripList" style="overflow-y: auto; flex:1; text-align:left; border-top:1px solid #eee;"></div><button onclick="closeHistory()" class="btn-confirm" style="width:100%; margin-top:15px;">Fermer</button></div></div>
+    
+    <div id="modal-elevation" class="hidden" onclick="closeElevationModal()"><div class="modal-box" onclick="event.stopPropagation()"><h3 style="background-color:#34495e;">🏔️ Profil Altimétrique</h3><div style="padding:15px; background:white;"><canvas id="elevation-canvas" width="300" height="150" style="width:100%; border-bottom:1px solid #eee;"></canvas><div style="display:flex; justify-content:space-between; margin-top:5px; font-size:12px; font-weight:bold; color:#555;"><span id="elev-min">Min: --m</span><span id="elev-max">Max: --m</span></div><div style="text-align:center; font-size:10px; color:#999; margin-top:5px;">Axe X : Distance parcourue</div></div><button onclick="closeElevationModal()" class="btn-confirm" style="width:100%; margin:0;">Fermer</button></div></div>
+    
+    <div id="modal-achievements" class="hidden" onclick="closeAchievements()"><div class="modal-box" onclick="event.stopPropagation()"><h3 style="background-color:#f1c40f; color:#333;">🏆 Mes Succès</h3><div id="achievements-content" style="padding:15px; text-align:center;"></div><button onclick="closeAchievements()" class="btn-confirm" style="width:100%; margin:0;">Fermer</button></div></div>
 
-    <div id="modal-edit-point" class="hidden">
-        <div class="modal-box">
-            <h3 style="background-color:#3498db;">📝 Carnet & Modif</h3>
-            <div style="padding: 10px 15px;">
-                <div style="display:flex; gap:5px;">
-                    <input type="text" id="edit-emoji" style="width:50px; text-align:center; font-size:20px;">
-                    <input type="text" id="edit-note" style="flex:1;">
-                </div>
-            </div>
-            <label style="margin: 0 15px;">📜 Historique des prises :</label>
-            <div id="history-list-container" class="history-list"></div>
-            <div class="history-add-container">
-                <input type="text" id="new-history-entry" placeholder="Ex: 3kg, 5 beaux...">
-                <div id="history-env-info" style="text-align:right; font-size:10px; color:#8e44ad; font-weight:bold; margin-bottom:3px; margin-top:2px;"></div>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">
-                    <label for="history-photo-input" class="btn-photo-label">
-                        📷 Photo
-                        <input type="file" id="history-photo-input" accept="image/*" capture="environment" style="display:none" onchange="previewPhotoCount()">
+    <div id="modal-plantnet" class="hidden">
+        <div class="modal-box" style="max-height: 90vh;">
+            <h3 style="background-color:#27ae60;">🌿 Identification IA</h3>
+            <div class="scrollable-content" style="text-align:center;">
+                <div id="plantnet-upload-area">
+                    <p style="color:#666; font-size:13px; margin-bottom:10px;">Prends une photo nette.</p>
+                    <label style="text-align:left; margin-bottom:2px;">C'est quoi ?</label>
+                    <select id="plant-organ" style="width:100%; margin-bottom:15px; padding:10px; border-radius:10px; border:1px solid #ccc;">
+                        <option value="auto">🤖 Auto (Je sais pas)</option>
+                        <option value="leaf" selected>🍃 Feuille (Conseillé)</option>
+                        <option value="flower">🌸 Fleur</option>
+                        <option value="fruit">🍇 Fruit</option>
+                        <option value="bark">🪵 Écorce</option>
+                    </select>
+                    <label for="plantnet-input" class="btn-confirm" style="background:#27ae60; display:inline-block; padding:15px 30px; border-radius:30px; cursor:pointer;">
+                        📷 Prendre Photo
+                        <input type="file" id="plantnet-input" accept="image/*" capture="environment" style="opacity:0; position:absolute; z-index:-1;" onchange="handlePlantUpload(this)">
                     </label>
-                    <span id="photo-status" style="font-size:10px; color:#27ae60; display:none;">Image sélectionnée !</span>
-                    <button class="btn-add-history" onclick="addHistoryToCurrentPoint()">➕ Ajouter</button>
                 </div>
+                <div id="plantnet-loading" class="hidden"><div style="font-size:40px; animation:spin 1s infinite linear;">🌍</div><p>Analyse en cours sur Pl@ntNet...</p></div>
+                <div id="plantnet-results" class="hidden" style="text-align:left; margin-top:15px;"></div>
             </div>
-            <div class="modal-buttons" style="margin-top:10px;">
-                <button onclick="deleteCurrentPoint()" class="btn-danger">Supprimer Point</button>
-                <button onclick="savePointEdits()" class="btn-confirm">Fermer</button>
-            </div>
+            <div class="modal-buttons"><button onclick="closePlantNetModal()" class="btn-cancel">Fermer</button></div>
         </div>
     </div>
 
-    <div id="modal-parcel" class="hidden">
-        <div class="modal-box">
-            <h3 style="background-color:#e67e22;">Parcelle Détectée 🏠</h3>
-            <p id="parcel-ref" style="text-align:center; font-weight:bold; color:#666; margin:10px 0 5px 0; font-size:14px;">Ref: ...</p>
-            <p id="parcel-area" style="text-align:center; margin:0 0 15px 0; line-height:1.2;"></p>
-            <label>Couleur :</label>
-            <div class="color-picker-row">
-                <div class="color-option" style="background:#e74c3c;" onclick="selectColor('#e74c3c', this)"></div>
-                <div class="color-option" style="background:#3498db;" onclick="selectColor('#3498db', this)"></div>
-                <div class="color-option" style="background:#f1c40f;" onclick="selectColor('#f1c40f', this)"></div>
-                <div class="color-option" style="background:#2ecc71;" onclick="selectColor('#2ecc71', this)"></div>
-                <div class="color-option" style="background:#9b59b6;" onclick="selectColor('#9b59b6', this)"></div>
-                <div class="color-option selected" style="background:#95a5a6;" onclick="selectColor('#95a5a6', this)"></div>
+    <div id="modal-pisteur" class="hidden" onclick="closePisteur()">
+        <div class="modal-box" onclick="event.stopPropagation()" style="max-height: 85vh; display:flex; flex-direction:column;">
+            <h3 style="background-color:#795548;">🐾 Traces & Empreintes</h3>
+            <div style="padding:10px; background:#f4eecf; border-bottom:1px solid #dcd6b6; font-size:12px; color:#5d4037; font-style:italic; text-align:center;">
+                "Regarde dans la boue ou près des points d'eau."
             </div>
-            <label>Note / Propriétaire :</label>
-            <input type="text" id="parcel-note" placeholder="Ex: Chez Jean-Mi">
-            <div class="modal-buttons">
-                <button onclick="closeParcelModal()" class="btn-cancel">Annuler</button>
-                <button onclick="confirmSaveParcel()" class="btn-confirm" style="background-color:#e67e22;">Colorier</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="modal-edit-trip" class="hidden">
-        <div class="modal-box">
-            <h3 style="background-color:#8e44ad;">✏️ Note du Trajet</h3>
-            <label>Note / Météo / Champignons trouvés :</label>
-            <textarea id="edit-trip-note" placeholder="Ex: Rando sous la pluie, rien trouvé..."></textarea>
-            <div class="modal-buttons">
-                <button onclick="closeEditTripModal()" class="btn-cancel">Annuler</button>
-                <button onclick="confirmSaveTripNote()" class="btn-confirm" style="background-color:#8e44ad;">Sauvegarder</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="stats-overlay" class="hidden" onclick="closeStats()">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <h3>📊 Mes Stats</h3>
-            <div id="stats-content" style="text-align: left; margin-bottom: 20px;"></div>
-            <button onclick="closeStats()" class="btn-confirm" style="width:100%">Fermer</button>
-        </div>
-    </div>
-
-    <div id="modal-cadastre-stats" class="hidden" onclick="closeCadastreStats()">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <h3 style="background-color:#f39c12;">🏠 Bilan Foncier</h3>
-            <div id="cadastre-stats-content" style="padding:15px; text-align: left;"></div>
-            <button onclick="closeCadastreStats()" class="btn-confirm" style="width:100%; margin: 0 0 15px 0;">Fermer</button>
-        </div>
-    </div>
-
-    <div id="history-overlay" class="hidden" onclick="closeHistory()">
-        <div class="modal-box" onclick="event.stopPropagation()" style="max-height: 80vh; display:flex; flex-direction:column;">
-            <h3>👣 Mes Trajets</h3>
-            <div style="padding:10px 15px 0 15px;">
-                <select id="filter-trip-class" onchange="renderHistoryList()" class="year-select" style="margin-bottom:5px;">
-                    <option value="all">Tout voir (Toutes distances)</option>
-                    <option value="blue">🟦 Petites balades (< 2km)</option>
-                    <option value="green">🟩 Randos Moyennes (2-5km)</option>
-                    <option value="orange">🟧 Bonnes marches (5-10km)</option>
-                    <option value="red">🟥 Grandes randos (> 10km)</option>
-                </select>
-                <button class="btn-load" onclick="showAllTrips()" style="width:100%; font-size:12px; margin-bottom:5px;">👁️ Tout afficher en couleur</button>
-                <button class="btn-cancel" onclick="clearMapLayers()" style="width:100%; font-size:12px;">❌ Effacer les tracés</button>
-            </div>
-            <div id="tripList" style="overflow-y: auto; flex:1; text-align:left; border-top:1px solid #eee;"></div>
-            <button onclick="closeHistory()" class="btn-confirm" style="width:100%; margin-top:15px;">Fermer</button>
-        </div>
-    </div>
-
-    <div id="modal-elevation" class="hidden" onclick="closeElevationModal()">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <h3 style="background-color:#34495e;">🏔️ Profil Altimétrique</h3>
-            <div style="padding:15px; background:white;">
-                <canvas id="elevation-canvas" width="300" height="150" style="width:100%; border-bottom:1px solid #eee;"></canvas>
-                <div style="display:flex; justify-content:space-between; margin-top:5px; font-size:12px; font-weight:bold; color:#555;">
-                    <span id="elev-min">Min: --m</span>
-                    <span id="elev-max">Max: --m</span>
+            <div id="pisteur-grid" class="begoledex-grid">
                 </div>
-                <div style="text-align:center; font-size:10px; color:#999; margin-top:5px;">Axe X : Distance parcourue</div>
+            <button onclick="closePisteur()" class="btn-confirm" style="width:100%; margin-top:10px; background-color:#795548;">Fermer le guide</button>
+        </div>
+    </div>
+
+    <div id="modal-metal" class="hidden" style="background: #222; color: #fff;">
+        <div class="modal-content" style="background: transparent; box-shadow: none; border: none; padding: 20px; text-align: center;">
+            <h2 style="color: #f1c40f; text-shadow: 0 0 10px #f1c40f; margin-top: 0;">🧲 Détecteur</h2>
+            
+            <div id="metal-val" style="font-size: 40px; font-family: monospace; font-weight: bold; margin: 20px 0;">0 µT</div>
+            
+            <div style="width: 100%; height: 300px; background: #333; border-radius: 15px; position: relative; overflow: hidden; border: 2px solid #555;">
+                <div id="metal-bar" style="width: 100%; height: 0%; background: linear-gradient(to top, #2ecc71, #f1c40f, #e74c3c); position: absolute; bottom: 0; transition: height 0.1s;"></div>
+                <div style="width: 100%; height: 2px; background: rgba(255,255,255,0.3); position: absolute; bottom: 60%; border-top: 1px dashed white;"></div>
             </div>
-            <button onclick="closeElevationModal()" class="btn-confirm" style="width:100%; margin:0;">Fermer</button>
+            
+            <p style="color: #aaa; font-size: 12px; margin-top: 15px;">Approchez le haut du téléphone d'un objet métallique.</p>
+            
+            <button onclick="closeMetalDetector()" class="btn-close" style="background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 20px; font-weight: bold; margin-top: 20px; cursor: pointer;">Fermer</button>
         </div>
     </div>
 
-    <div id="modal-achievements" class="hidden" onclick="closeAchievements()">
-        <div class="modal-box" onclick="event.stopPropagation()">
-            <h3 style="background-color:#f1c40f; color:#333;">🏆 Mes Succès</h3>
-            <div id="achievements-content" style="padding:15px; text-align:center;">
-                </div>
-            <button onclick="closeAchievements()" class="btn-confirm" style="width:100%; margin:0;">Fermer</button>
-        </div>
-    </div>
-
-    <div id="lightbox-overlay" class="hidden" onclick="closeLightbox()">
-        <img id="lightbox-img" src="" alt="Photo en grand">
-    </div>
+    <div id="modal-begoledex" class="hidden" onclick="closeBegoledex()"><div class="modal-box" onclick="event.stopPropagation()" style="max-height: 85vh; display:flex; flex-direction:column;"><h3 style="background-color:#8e44ad;">📖 Mon Bégolédex</h3><div style="padding:10px; background:#f9f9f9; border-bottom:1px solid #eee;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;"><span style="font-weight:bold; color:#555;">Espèces uniques :</span><span id="begoledex-count" style="font-weight:800; color:#8e44ad; font-size:18px;">0</span></div><div style="background:#eee; height:10px; border-radius:5px; overflow:hidden;"><div id="begoledex-bar" style="background:#8e44ad; height:100%; width:0%;"></div></div></div><div id="begoledex-grid" class="begoledex-grid"></div><button onclick="closeBegoledex()" class="btn-confirm" style="width:100%; margin-top:10px;">Fermer le livre</button></div></div>
+    <div id="lightbox-overlay" class="hidden" onclick="closeLightbox()"><img id="lightbox-img" src="" alt="Photo en grand"></div>
+    <div id="ar-screen" class="hidden"><video id="ar-video" autoplay playsinline muted></video><div id="ar-points-container"></div><div class="ar-ui-top"><span style="font-weight:bold; color:white; text-shadow:0 1px 3px black;">🕶️ Mode AR</span><button onclick="stopAR()" class="btn-cancel" style="padding:5px 15px; font-size:12px;">Fermer</button></div><div class="ar-ui-bottom"><p style="color:white; font-size:12px; text-align:center; text-shadow:0 1px 3px black;">Pointe ton téléphone vers l'horizon.<br>Rayon : 1 km.</p></div></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
     <script src="script.js"></script>
 
 </body>
