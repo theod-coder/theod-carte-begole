@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bégole Map</title>
+    <title>Bégole Map 🌳</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
@@ -16,6 +16,7 @@
     <div id="weather-overlay"></div>
     <div id="firefly-overlay"></div>
     <div id="cloud-overlay"></div>
+    <div id="pollen-overlay"></div>
     <div id="map"></div>
 
     <button id="btn-compass" onclick="toggleCompass()">🧭</button>
@@ -77,7 +78,11 @@
 
             <div class="menu-section-title">🚀 Actions Rapides</div>
             
-            <button id="btn-tracking" class="btn-start-track" onclick="toggleTracking()" style="margin-bottom:10px; justify-content:center; text-align:center;">▶️ Lancer Trajet</button>
+            <button id="btn-tracking" class="btn-start-track" onclick="toggleTracking()" style="margin-bottom:5px; justify-content:center; text-align:center;">▶️ Lancer Trajet</button>
+
+            <button onclick="togglePocketMode()" style="width:100%; margin-bottom:10px; background:#2c3e50; color:white; border:none; padding:10px; border-radius:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px;">
+                🔒 Mode Poche
+            </button>
 
             <div class="tools-grid">
                 <button onclick="openPlantNetModal()" class="btn-grid" style="background:#27ae60;">
@@ -95,7 +100,9 @@
                     <span>🏠 Limites Cadastre</span>
                     <label class="switch"><input type="checkbox" id="cadastre-mode-toggle" onchange="toggleCadastreMode()"><span class="slider round"></span></label>
                 </div>
+                
                 <div id="cadastre-opacity-container" class="hidden" style="margin-top:5px; border-top:1px dashed #ccc; padding-top:5px;">
+                    <span style="font-size:10px; color:#888;">Opacité</span>
                     <input type="range" min="0" max="1" step="0.1" value="0.5" style="width:100%;" oninput="updateCadastreOpacity(this.value)">
                 </div>
 
@@ -103,15 +110,9 @@
                     <span>💾 Voir Parcelles Sauvées</span>
                     <label class="switch"><input type="checkbox" id="show-parcels-toggle" onchange="toggleSavedParcels()"><span class="slider round"></span></label>
                 </div>
-                <div class="toggle-row">
-                    <span style="color:#3498db; font-weight:bold;">🌑 Nuit Profonde</span>
-                    <label class="switch">
-                        <input type="checkbox" id="deep-night-toggle" onchange="toggleDeepNight()">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
                 <div class="toggle-row"><span>🔥 Heatmap</span><label class="switch"><input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()"><span class="slider round"></span></label></div>
                 <div class="toggle-row"><span>📡 Radar (40m)</span><label class="switch"><input type="checkbox" id="radar-toggle" onchange="toggleRadar()"><span class="slider round"></span></label></div>
+                <div class="toggle-row"><span style="color:#3498db; font-weight:bold;">🌑 Nuit Profonde</span><label class="switch"><input type="checkbox" id="deep-night-toggle" onchange="toggleDeepNight()"><span class="slider round"></span></label></div>
                 <div class="toggle-row"><span style="color:#c0392b; font-weight:bold;">🙈 Mode Secret</span><label class="switch"><input type="checkbox" id="intruder-toggle" onchange="toggleIntruderMode()"><span class="slider round"></span></label></div>
                 <div class="toggle-row"><span>🚩 Limites Village</span><label class="switch"><input type="checkbox" id="borders-toggle" onchange="toggleBorders()"><span class="slider round"></span></label></div>
             </div>
@@ -140,7 +141,7 @@
                 <button onclick="resetFilter()" class="btn-filter-reset" style="flex:1; font-size:12px;">Tout voir</button>
             </div>
 
-            <div class="menu-section-title">✨ Immersion & Ambiance</div>
+            <div class="menu-section-title">✨ Immersion</div>
             
             <div class="avatar-selector">
                 <div class="avatar-option" id="av-man" onclick="setAvatar('man')">🚶</div>
@@ -151,7 +152,7 @@
 
             <div class="tools-grid">
                 <button onclick="toggleSoundscape()" id="btn-sound" class="btn-grid" style="background:#34495e;">
-                    <span class="grid-icon">🔇</span><span class="grid-text">Ambiance<br>Sonore</span>
+                    <span class="grid-icon">🔇</span><span class="grid-text">Son</span>
                 </button>
                 <div class="btn-grid" style="background:#95a5a6; cursor:default; padding:5px;">
                     <span style="font-size:24px; display:block;">☁️</span>
@@ -163,9 +164,13 @@
             <div class="menu-section-title">💾 Système & Données</div>
             
             <button class="btn-history" onclick="openHistory()" style="margin-bottom:5px;">📜 Historique Trajets</button>
-            <button onclick="showStats()" class="btn-stats" style="margin-bottom:5px;">🏆 Statistiques</button>
             
-            <div class="storage-container">
+            <div class="filter-row">
+                <button onclick="showStats()" class="btn-stats" style="flex:1;">🏆 Globales</button>
+                <button onclick="showCadastreStats()" class="btn-stats" style="flex:1; background:#e67e22;">📊 Cadastre</button>
+            </div>
+            
+            <div class="storage-container" style="margin-top:10px;">
                 <div class="storage-header"><span id="storage-text">Stockage...</span></div>
                 <div class="storage-track"><div class="storage-fill" id="storage-bar" style="width:0%"></div></div>
             </div>
@@ -175,13 +180,12 @@
                 <label class="btn-load" style="flex:1; text-align:center; display:block; padding:12px; border-radius:12px; color:white; font-weight:bold; cursor:pointer;">
                     Charger <input type="file" id="import-file" style="display:none;" onchange="importData(this)">
                 </label>
-                <button onclick="togglePocketMode()" style="background:#34495e; width:auto;">🔒</button>
             </div>
             
             <button onclick="clearData()" class="btn-danger" style="margin-top:10px; font-size:10px; padding:5px;">⚠️ Reset Total</button>
             
             <div style="text-align:center; margin-top:15px; font-size:9px; color:#aaa;">
-                Bégole Map v3.1
+                Bégole Map v3.3
             </div>
         </div>
     </div>
@@ -209,10 +213,10 @@
             <div style="padding:10px; background:#f9f9f9; border-bottom:1px solid #eee;">
                 <select id="filter-trip-class" onchange="renderHistoryList()" class="year-select" style="margin:0;">
                     <option value="all">Tout voir</option>
-                    <option value="blue">🔵 Balades (&lt;2km)</option>
+                    <option value="blue">🔵 Balades (<2km)</option>
                     <option value="green">🟢 Randos (2-5km)</option>
                     <option value="orange">🟠 Grosses Randos (5-10km)</option>
-                    <option value="red">🔴 Expéditions (&gt;10km)</option>
+                    <option value="red">🔴 Expéditions (>10km)</option>
                 </select>
             </div>
             <div id="tripList" class="scrollable-content"></div>

@@ -328,7 +328,35 @@ input:checked + .slider:before { transform: translateX(21px); }
 #pocket-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #000000; z-index: 3000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #444; user-select: none; }
 .pocket-btn { border: 2px solid #333; color: #666; background: black; padding: 20px 40px; border-radius: 50px; font-size: 18px; margin-top: 30px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
 .hidden-poche { display: none !important; }
-.emoji-icon { display: flex; justify-content: center; align-items: center; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #999; border-radius: 50%; font-size: 22px; box-shadow: 0 3px 6px rgba(0,0,0,0.3); }
+/* --- MODIFICATION : LE CONTENEUR LEAFLET DEVIENT INVISIBLE --- */
+.emoji-icon { 
+    background: transparent !important; 
+    border: none !important; 
+    box-shadow: none !important; 
+}
+
+/* --- NOUVEAU : LA BULLE QUI POP --- */
+.marker-bubble {
+    display: flex; justify-content: center; align-items: center;
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 1px solid #999;
+    border-radius: 50%;
+    width: 100%; height: 100%;
+    font-size: 22px;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+    
+    /* L'animation */
+    transform: scale(0); /* Départ invisible */
+    animation: pop-bounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Keyframes pour le rebond élastique */
+@keyframes pop-bounce {
+    0% { transform: scale(0) translateY(-30px); opacity: 0; }
+    50% { opacity: 1; }
+    70% { transform: scale(1.2) translateY(0); }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
 .user-location-arrow { width: 36px; height: 36px; background-color: #3498db; color: white; border: 2px solid white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 20px; box-shadow: 0 3px 6px rgba(0,0,0,0.3); transition: transform 0.5s ease-out; }
 .user-location-arrow::after { content: '⬆️'; position: relative; top: -1px; }
 .leaflet-div-icon { background: transparent; border: none; }
@@ -620,4 +648,40 @@ body.deep-night-active .leaflet-popup-tip {
     background: #1a252f !important;
     color: #bdc3c7 !important;
     border: 1px solid #34495e;
+}
+
+/* =========================================
+   25. EFFET POLLEN (JOURNÉE)
+   ========================================= */
+#pollen-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 460; /* Juste devant les nuages */
+}
+
+.pollen {
+    position: absolute;
+    width: 3px; height: 3px;
+    background: rgba(255, 215, 0, 0.6); /* Or transparent */
+    border-radius: 50%;
+    filter: blur(0.5px); /* Légèrement flou */
+    box-shadow: 0 0 2px rgba(255, 255, 255, 0.4);
+    animation: pollen-float linear infinite;
+}
+
+@keyframes pollen-float {
+    0% {
+        opacity: 0;
+        transform: translateY(0) translateX(0) scale(0.5);
+    }
+    20% {
+        opacity: 0.8;
+    }
+    80% {
+        opacity: 0.6;
+    }
+    100% {
+        opacity: 0;
+        /* Monte doucement et dérive */
+        transform: translateY(-50px) translateX(var(--drift)) scale(1);
+    }
 }
