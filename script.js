@@ -1408,3 +1408,12 @@ async function startApp() {
     }
 }
 startApp();
+
+// --- ENREGISTREMENT PWA (SERVICE WORKER) ---
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('Service Worker enregistré !', reg))
+            .catch(err => console.log('Erreur SW :', err));
+    });
+}
