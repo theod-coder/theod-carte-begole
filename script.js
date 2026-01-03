@@ -119,17 +119,41 @@ function updateAstroWidget() {
     // --- 3. GESTION DES THÈMES & EFFETS ---
     document.body.classList.remove('theme-golden', 'theme-dark'); 
     
+    let isNight = false; // Variable pour savoir s'il fait nuit
     if (currentHour > sunsetHour || currentHour < 7) { 
         document.body.classList.add('theme-dark'); 
+        isNight = true;
     } else if (remaining < 1 && remaining > 0) { 
         document.body.classList.add('theme-golden'); 
     }
 
-    // --- MISE À JOUR CONTINUE DES LUCIOLES ---
+    // --- 4. GESTION DEEP NIGHT (AUTO OU SAUVÉ) ---
+    const deepPref = localStorage.getItem('begole_deep_night_pref');
+    const deepToggle = document.getElementById('deep-night-toggle');
+    
+    let shouldEnableDeep = false;
+
+    if (deepPref !== null) {
+        // A. L'utilisateur a choisi (ON ou OFF explicitement)
+        shouldEnableDeep = (deepPref === 'true');
+    } else {
+        // B. Par défaut : ON si c'est la nuit, OFF sinon
+        shouldEnableDeep = isNight;
+    }
+
+    if (shouldEnableDeep) {
+        document.body.classList.add('deep-night-active');
+        if (deepToggle) deepToggle.checked = true;
+    } else {
+        document.body.classList.remove('deep-night-active');
+        if (deepToggle) deepToggle.checked = false;
+    }
+
+    // --- 5. MISE À JOUR CONTINUE DES LUCIOLES ---
     if (typeof manageFireflies === 'function') {
         manageFireflies();
     }
-    // --- MISE À JOUR AUDIO ---
+    // --- 6. MISE À JOUR AUDIO ---
     if (typeof checkAndPlayAmbiance === 'function') checkAndPlayAmbiance();
 }
 
@@ -653,6 +677,91 @@ async function requestWakeLock(){try{if('wakeLock'in navigator)wakeLock=await na
 async function releaseWakeLock(){if(wakeLock){await wakeLock.release();wakeLock=null;}}
 var lastClick=0; function togglePocketMode(){const e=document.getElementById('pocket-overlay');if(e.classList.contains('hidden-poche')){e.classList.remove('hidden-poche');toggleMenu();}else{if(Date.now()-lastClick<500)e.classList.add('hidden-poche');lastClick=Date.now();}}
 
+// --- 11. SUCCES ---
+function showAchievements() { const content = document.getElementById('achievements-content'); content.innerHTML = ""; const totalPoints = savedPoints.length; const totalTrips = savedTrips.length; const totalDist = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalElevation = savedTrips.reduce((acc, t) => acc + (t.elevationGain || 0), 0); const totalPhotos = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.filter(h => h.photo).length : 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); let daysSinceStart = 0; if (savedPoints.length > 0) { const firstDate = new Date(Math.min(...savedPoints.map(p => p.id))); daysSinceStart = (Date.now() - firstDate) / (1000 * 60 * 60 * 24); } const badges = [ { id: 'start', icon: '🌱', title: 'Premiers Pas', desc: '1er point enregistré', check: () => totalPoints >= 1 }, { id: 'walker', icon: '🥾', title: 'Promeneur', desc: '10 km parcourus', check: () => totalDist >= 10 }, { id: 'paparazzi', icon: '📷', title: 'Paparazzi', desc: '5 photos prises', check: () => totalPhotos >= 5 }, { id: 'collec', icon: '🍄', title: 'Collectionneur', desc: '50 points trouvés', check: () => totalPoints >= 50 }, { id: 'master', icon: '🧙', title: 'Grand Sage', desc: '100 points trouvés', check: () => totalPoints >= 100 }, { id: 'ecureuil', icon: '🌰', title: 'Écureuil', desc: '20 trouvailles (Cèpes, Châtaignes...)', check: () => savedPoints.filter(p => ["🍄","🌰","🍂"].includes(p.emoji)).length >= 20 }, { id: 'marathon', icon: '🏃', title: 'Marathonien', desc: '42 km cumulés', check: () => totalDist >= 42 }, { id: 'ultra', icon: '🚀', title: 'Ultra-Trail', desc: '100 km cumulés', check: () => totalDist >= 100 }, { id: 'climber', icon: '⛰️', title: 'Grimpeur', desc: '500m D+ cumulé', check: () => totalElevation >= 500 }, { id: 'sherpa', icon: '🏔️', title: 'Sherpa', desc: '2000m D+ cumulé', check: () => totalElevation >= 2000 }, { id: 'longtrip', icon: '⏱️', title: 'Longue Marche', desc: 'Une rando de plus de 3h', check: () => savedTrips.some(t => t.duration > 10800000) }, { id: 'earlybird', icon: '🌅', title: 'Lève-tôt', desc: 'Point créé entre 5h et 8h du matin', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 5 && h < 8; }) }, { id: 'night', icon: '🦉', title: 'Oiseau de Nuit', desc: 'Sortie nocturne (22h-5h)', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 22 || h < 5; }) }, { id: 'rain', icon: '🌧️', title: 'Botte de Pluie', desc: 'Sortie sous la pluie', check: () => savedPoints.some(p => (p.weather || "").match(/Pluie|Averses|Orage/)) }, { id: 'winter', icon: '❄️', title: 'Yéti', desc: 'Sortie en Hiver (Déc-Fév)', check: () => savedPoints.some(p => { const m = new Date(p.id).getMonth(); return m === 11 || m === 0 || m === 1; }) }, { id: 'writer', icon: '✍️', title: 'Romancier', desc: '20 notes dans le carnet', check: () => totalHistory >= 20 }, { id: 'veteran', icon: '🎖️', title: 'Vétéran', desc: 'Utilise l\'app depuis 1 an', check: () => daysSinceStart >= 365 }, { id: 'addict', icon: '🔥', title: 'Accro', desc: '50 trajets enregistrés', check: () => totalTrips >= 50 } ]; let html = '<div class="achievements-grid">'; let unlockedCount = 0; badges.forEach(b => { const unlocked = b.check(); if(unlocked) unlockedCount++; html += `<div class="badge-card ${unlocked ? 'unlocked' : ''}"><span class="badge-icon">${b.icon}</span><span class="badge-title">${b.title}</span><span class="badge-desc">${b.desc}</span></div>`; }); html += '</div>'; const summary = `<div style="text-align:center; margin-bottom:15px; color:#555; font-weight:bold;">🏆 Progression : ${unlockedCount} / ${badges.length} badges<div style="background:#eee; height:8px; border-radius:4px; margin-top:5px; overflow:hidden;"><div style="background:#f1c40f; height:100%; width:${(unlockedCount/badges.length)*100}%"></div></div></div>`; content.innerHTML = summary + html; document.getElementById('modal-achievements').classList.remove('hidden'); toggleMenu(); }
+function closeAchievements() { document.getElementById('modal-achievements').classList.add('hidden'); }
+
+// --- 12. NIVEAUX & PARTICULES ---
+function updateUserLevel() { const totalPoints = savedPoints.length; const totalKm = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); const xp = Math.floor((totalPoints * 100) + (totalKm * 50) + (totalHistory * 10)); let level = 1; let xpForNext = 500; let xpForCurrent = 0; let increment = 500; while (xp >= xpForNext) { level++; xpForCurrent = xpForNext; increment += 500; xpForNext += increment; } const titles = [ "Vagabond", "Promeneur", "Eclaireur", "Pisteur", "Traqueur", "Aventurier", "Explorateur", "Ranger", "Sentinelle", "Garde-Forestier", "Druide", "Chamane", "Maître des Bois", "Gardien Ancestral", "Ermite Légendaire", "Esprit de la Forêt", "Seigneur Sauvage", "Roi de Bégole", "Demi-Dieu", "Légende Vivante" ]; const titleIndex = Math.min(level - 1, titles.length - 1); const title = titles[titleIndex]; const elTitle = document.getElementById('user-title'); const elLvl = document.getElementById('user-lvl'); const elXpText = document.getElementById('user-xp-text'); const elBar = document.getElementById('user-xp-bar'); if(elTitle) elTitle.innerText = title; if(elLvl) elLvl.innerText = `Niv. ${level}`; const range = xpForNext - xpForCurrent; const currentInLevel = xp - xpForCurrent; const percent = Math.min(100, Math.max(0, (currentInLevel / range) * 100)); if(elXpText) elXpText.innerText = `${Math.round(currentInLevel)} / ${Math.round(range)} XP (Total: ${xp})`; if(elBar) elBar.style.width = `${percent}%`; if (level < 5) elBar.style.background = "#2ecc71"; else if (level < 10) elBar.style.background = "#3498db"; else if (level < 15) elBar.style.background = "#9b59b6"; else elBar.style.background = "linear-gradient(90deg, #f1c40f, #e67e22)"; }
+function triggerWeatherEffect(weatherDesc) { const container = document.getElementById('weather-overlay'); if(!container) return; container.innerHTML = ''; document.body.classList.remove('weather-active', 'weather-fading'); container.style.opacity = '1'; if (!weatherDesc) return; const w = weatherDesc.toLowerCase(); let type = null; if (w.includes('pluie') || w.includes('averse') || w.includes('orage')) type = 'rain'; if (w.includes('neige') || w.includes('flocon')) type = 'snow'; if (type) { document.body.classList.add('weather-active'); const count = type === 'rain' ? 50 : 30; for (let i = 0; i < count; i++) { const p = document.createElement('div'); p.classList.add(type); p.style.left = Math.random() * 100 + 'vw'; p.style.animationDuration = (Math.random() * 1 + 0.5) + 's'; if(type === 'snow') { p.style.width = p.style.height = (Math.random() * 5 + 3) + 'px'; p.style.animationDuration = (Math.random() * 3 + 2) + 's'; } container.appendChild(p); } setTimeout(() => { document.body.classList.add('weather-fading'); }, 4000); setTimeout(() => { document.body.classList.remove('weather-active', 'weather-fading'); container.innerHTML = ''; }, 5000); } }
+
+// ============================================================
+// --- 14. PLANTNET (API CORRIGÉE & COMPRESSION) ---
+// ============================================================
+// --- METS TA CLÉ ICI (SANS ESPACES) ---
+const PLANTNET_API_KEY = "2b10FAmoTbTZwVvtpZFrsy9su"; 
+
+function openPlantNetModal() { document.getElementById('modal-plantnet').classList.remove('hidden'); document.getElementById('plantnet-results').innerHTML = ""; document.getElementById('plantnet-upload-area').classList.remove('hidden'); document.getElementById('plantnet-loading').classList.add('hidden'); toggleMenu(); }
+function closePlantNetModal() { document.getElementById('modal-plantnet').classList.add('hidden'); }
+async function handlePlantUpload(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const organ = document.getElementById('plant-organ').value || 'auto';
+
+    document.getElementById('plantnet-upload-area').classList.add('hidden');
+    document.getElementById('plantnet-loading').classList.remove('hidden');
+
+    try {
+        const compressedDataUrl = await compressImage(file, 1024, 0.6); 
+        const res = await fetch(compressedDataUrl);
+        const blob = await res.blob();
+
+        const formData = new FormData();
+        formData.append('images', blob);
+        formData.append('organs', organ); 
+
+        const url = `https://my-api.plantnet.org/v2/identify/all?include-related-images=true&no-reject=false&lang=fr&api-key=${PLANTNET_API_KEY}`;
+        
+        const response = await fetch(url, { method: 'POST', body: formData });
+        
+        // --- MODIFICATION POUR LE DIAGNOSTIC ---
+        if (!response.ok) {
+            const errorText = await response.text(); // On lit le message caché du serveur
+            // On nettoie le message pour qu'il soit lisible dans l'alerte
+            let cleanError = errorText.replace(/"/g, '').substring(0, 100);
+            throw new Error(`Code ${response.status} : ${cleanError}`);
+        }
+        // ---------------------------------------
+        
+        const data = await response.json();
+        
+        document.getElementById('plantnet-loading').classList.add('hidden');
+        document.getElementById('plantnet-results').classList.remove('hidden');
+        
+        if (data.results && data.results.length > 0) { 
+            displayPlantResults(data.results); 
+        } else { 
+            document.getElementById('plantnet-results').innerHTML = "<p>🌱 Aucune plante reconnue.<br>Essaie de te rapprocher.</p><button onclick='openPlantNetModal()' class='btn-confirm'>Réessayer</button>"; 
+        }
+
+    } catch (error) { 
+        console.error(error); 
+        document.getElementById('plantnet-loading').classList.add('hidden');
+        document.getElementById('plantnet-upload-area').classList.remove('hidden');
+        // Affiche le vrai message d'erreur à l'écran
+        alert("🚨 ERREUR DÉTECTÉE :\n" + error.message); 
+    }
+    input.value = "";
+}
+
+function displayPlantResults(results) { const container = document.getElementById('plantnet-results'); container.innerHTML = "<h4 style='margin:0 0 10px 0;'>Résultats probables :</h4>"; const top3 = results.slice(0, 3); top3.forEach(res => { const scorePct = Math.round(res.score * 100); const scientificName = res.species.scientificNameWithoutAuthor; const commonName = (res.species.commonNames && res.species.commonNames.length > 0) ? res.species.commonNames[0] : scientificName; const refImage = (res.images && res.images.length > 0) ? res.images[0].url.m : ""; const html = `<div class="plant-result-card">${refImage ? `<img src="${refImage}" class="plant-thumb">` : ""}<div class="plant-info"><span class="plant-name">${commonName}</span><span class="plant-sci">${scientificName}</span><div class="score-container"><div class="score-bar" style="width:${scorePct}%"></div></div><small style="color:${scorePct>80?'green':'orange'}">${scorePct}% de confiance</small><br><button class="btn-add-plant" onclick="addIdentifiedPlant('${commonName.replace(/'/g, "\\'")}')">📍 Ajouter à la carte</button></div></div>`; container.innerHTML += html; }); container.innerHTML += "<button onclick='openPlantNetModal()' style='width:100%; margin-top:10px; padding:10px;'>🔄 Nouvelle Photo</button>"; }
+function addIdentifiedPlant(plantName) { closePlantNetModal(); if(userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("Point placé au centre de l'écran"); } openModal(); document.getElementById('input-emoji').value = "🌿"; document.getElementById('input-note').value = plantName; }
+
+// ============================================================
+// --- 18. GUIDE DU PISTEUR ---
+// ============================================================
+const animalTracks = [ { name: "Sanglier", icon: "🐗", desc: "Deux gros sabots + deux 'gardes' marqués à l'arrière. Lourd.", size: "6 - 9 cm" }, { name: "Chevreuil", icon: "🦌", desc: "Sabots fins en cœur ❤️. Les gardes ne marquent que dans la boue.", size: "4 - 5 cm" }, { name: "Renard", icon: "🦊", desc: "Forme ovale. 4 doigts. Les griffes sont visibles.", size: "5 cm" }, { name: "Blaireau", icon: "🦡", desc: "5 doigts alignés (petite main d'ours). Longues griffes.", size: "5 - 7 cm" }, { name: "Lièvre / Lapin", icon: "🐇", desc: "Déplacement en 'Y'. Grandes pattes arrière devant.", size: "Variable" }, { name: "Chien", icon: "🐕", desc: "Pattes rondes, 4 doigts. Moins symétrique que le renard.", size: "Variable" }, { name: "Oiseau", icon: "🐦", desc: "3 doigts devant, 1 derrière.", size: "Petit" }, { name: "Écureuil", icon: "🐿️", desc: "4 doigts avant, 5 arrière. Au pied des arbres.", size: "3 - 4 cm" } ];
+function openPisteur() { const grid = document.getElementById('pisteur-grid'); grid.innerHTML = ""; animalTracks.forEach(t => { const html = `<div class="track-card"><div class="track-icon">${t.icon}</div><div class="track-name">${t.name}</div><div class="track-desc">${t.desc}</div><div class="track-size">📏 ${t.size}</div></div>`; grid.innerHTML += html; }); document.getElementById('modal-pisteur').classList.remove('hidden'); toggleMenu(); }
+function closePisteur() { document.getElementById('modal-pisteur').classList.add('hidden'); }
+
+// ============================================================
+// --- 19. SHAKE TO POINT ---
+// ============================================================
+var lastShakeX = 0, lastShakeY = 0, lastShakeZ = 0; var lastShakeTime = 0; const SHAKE_THRESHOLD = 25; 
+function initShakeListener() { if (window.DeviceMotionEvent) { window.addEventListener('devicemotion', handleShake, false); } }
+function handleShake(e) { var acc = e.accelerationIncludingGravity; if (!acc) return; var currTime = Date.now(); if ((currTime - lastShakeTime) > 2000) { var diff = Math.abs(acc.x + acc.y + acc.z - lastShakeX - lastShakeY - lastShakeZ); if (diff > SHAKE_THRESHOLD) { triggerShakeAction(); lastShakeTime = currTime; } lastShakeX = acc.x; lastShakeY = acc.y; lastShakeZ = acc.z; } }
+function triggerShakeAction() { triggerHaptic('success'); if (userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("⚠️ GPS non fixé : Point au centre"); } openModal(); document.getElementById('input-emoji').value = "📍"; document.getElementById('input-note').value = "Point Shake 🫨"; showToast("📍 Shake ! Nouveau point créé."); }
+
 // =========================================
 // --- 20. GESTION DES LUCIOLES ---
 // =========================================
@@ -840,91 +949,22 @@ function toggleClouds() {
 }
 
 // =========================================
-// --- 18. GUIDE DU PISTEUR ---
+// --- 24. GESTION DU MODE NUIT PROFONDE ---
 // =========================================
-const animalTracks = [ { name: "Sanglier", icon: "🐗", desc: "Deux gros sabots + deux 'gardes' marqués à l'arrière. Lourd.", size: "6 - 9 cm" }, { name: "Chevreuil", icon: "🦌", desc: "Sabots fins en cœur ❤️. Les gardes ne marquent que dans la boue.", size: "4 - 5 cm" }, { name: "Renard", icon: "🦊", desc: "Forme ovale. 4 doigts. Les griffes sont visibles.", size: "5 cm" }, { name: "Blaireau", icon: "🦡", desc: "5 doigts alignés (petite main d'ours). Longues griffes.", size: "5 - 7 cm" }, { name: "Lièvre / Lapin", icon: "🐇", desc: "Déplacement en 'Y'. Grandes pattes arrière devant.", size: "Variable" }, { name: "Chien", icon: "🐕", desc: "Pattes rondes, 4 doigts. Moins symétrique que le renard.", size: "Variable" }, { name: "Oiseau", icon: "🐦", desc: "3 doigts devant, 1 derrière.", size: "Petit" }, { name: "Écureuil", icon: "🐿️", desc: "4 doigts avant, 5 arrière. Au pied des arbres.", size: "3 - 4 cm" } ];
-function openPisteur() { const grid = document.getElementById('pisteur-grid'); grid.innerHTML = ""; animalTracks.forEach(t => { const html = `<div class="track-card"><div class="track-icon">${t.icon}</div><div class="track-name">${t.name}</div><div class="track-desc">${t.desc}</div><div class="track-size">📏 ${t.size}</div></div>`; grid.innerHTML += html; }); document.getElementById('modal-pisteur').classList.remove('hidden'); toggleMenu(); }
-function closePisteur() { document.getElementById('modal-pisteur').classList.add('hidden'); }
+function toggleDeepNight() {
+    const isActive = document.getElementById('deep-night-toggle').checked;
+    
+    // Sauvegarde de la préférence
+    localStorage.setItem('begole_deep_night_pref', isActive);
 
-// ============================================================
-// --- 19. SHAKE TO POINT ---
-// ============================================================
-var lastShakeX = 0, lastShakeY = 0, lastShakeZ = 0; var lastShakeTime = 0; const SHAKE_THRESHOLD = 25; 
-function initShakeListener() { if (window.DeviceMotionEvent) { window.addEventListener('devicemotion', handleShake, false); } }
-function handleShake(e) { var acc = e.accelerationIncludingGravity; if (!acc) return; var currTime = Date.now(); if ((currTime - lastShakeTime) > 2000) { var diff = Math.abs(acc.x + acc.y + acc.z - lastShakeX - lastShakeY - lastShakeZ); if (diff > SHAKE_THRESHOLD) { triggerShakeAction(); lastShakeTime = currTime; } lastShakeX = acc.x; lastShakeY = acc.y; lastShakeZ = acc.z; } }
-function triggerShakeAction() { triggerHaptic('success'); if (userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("⚠️ GPS non fixé : Point au centre"); } openModal(); document.getElementById('input-emoji').value = "📍"; document.getElementById('input-note').value = "Point Shake 🫨"; showToast("📍 Shake ! Nouveau point créé."); }
-
-// ============================================================
-// --- 14. PLANTNET (API CORRIGÉE & COMPRESSION) ---
-// ============================================================
-// --- METS TA CLÉ ICI (SANS ESPACES) ---
-const PLANTNET_API_KEY = "2b10FAmoTbTZwVvtpZFrsy9su"; 
-
-function openPlantNetModal() { document.getElementById('modal-plantnet').classList.remove('hidden'); document.getElementById('plantnet-results').innerHTML = ""; document.getElementById('plantnet-upload-area').classList.remove('hidden'); document.getElementById('plantnet-loading').classList.add('hidden'); toggleMenu(); }
-function closePlantNetModal() { document.getElementById('modal-plantnet').classList.add('hidden'); }
-async function handlePlantUpload(input) {
-    if (!input.files || !input.files[0]) return;
-    const file = input.files[0];
-    const organ = document.getElementById('plant-organ').value || 'auto';
-
-    document.getElementById('plantnet-upload-area').classList.add('hidden');
-    document.getElementById('plantnet-loading').classList.remove('hidden');
-
-    try {
-        const compressedDataUrl = await compressImage(file, 1024, 0.6); 
-        const res = await fetch(compressedDataUrl);
-        const blob = await res.blob();
-
-        const formData = new FormData();
-        formData.append('images', blob);
-        formData.append('organs', organ); 
-
-        const url = `https://my-api.plantnet.org/v2/identify/all?include-related-images=true&no-reject=false&lang=fr&api-key=${PLANTNET_API_KEY}`;
-        
-        const response = await fetch(url, { method: 'POST', body: formData });
-        
-        // --- MODIFICATION POUR LE DIAGNOSTIC ---
-        if (!response.ok) {
-            const errorText = await response.text(); // On lit le message caché du serveur
-            // On nettoie le message pour qu'il soit lisible dans l'alerte
-            let cleanError = errorText.replace(/"/g, '').substring(0, 100);
-            throw new Error(`Code ${response.status} : ${cleanError}`);
-        }
-        // ---------------------------------------
-        
-        const data = await response.json();
-        
-        document.getElementById('plantnet-loading').classList.add('hidden');
-        document.getElementById('plantnet-results').classList.remove('hidden');
-        
-        if (data.results && data.results.length > 0) { 
-            displayPlantResults(data.results); 
-        } else { 
-            document.getElementById('plantnet-results').innerHTML = "<p>🌱 Aucune plante reconnue.<br>Essaie de te rapprocher.</p><button onclick='openPlantNetModal()' class='btn-confirm'>Réessayer</button>"; 
-        }
-
-    } catch (error) { 
-        console.error(error); 
-        document.getElementById('plantnet-loading').classList.add('hidden');
-        document.getElementById('plantnet-upload-area').classList.remove('hidden');
-        // Affiche le vrai message d'erreur à l'écran
-        alert("🚨 ERREUR DÉTECTÉE :\n" + error.message); 
+    if (isActive) {
+        document.body.classList.add('deep-night-active');
+        showToast("🌑 Mode Nuit Profonde activé");
+    } else {
+        document.body.classList.remove('deep-night-active');
     }
-    input.value = "";
 }
 
-function displayPlantResults(results) { const container = document.getElementById('plantnet-results'); container.innerHTML = "<h4 style='margin:0 0 10px 0;'>Résultats probables :</h4>"; const top3 = results.slice(0, 3); top3.forEach(res => { const scorePct = Math.round(res.score * 100); const scientificName = res.species.scientificNameWithoutAuthor; const commonName = (res.species.commonNames && res.species.commonNames.length > 0) ? res.species.commonNames[0] : scientificName; const refImage = (res.images && res.images.length > 0) ? res.images[0].url.m : ""; const html = `<div class="plant-result-card">${refImage ? `<img src="${refImage}" class="plant-thumb">` : ""}<div class="plant-info"><span class="plant-name">${commonName}</span><span class="plant-sci">${scientificName}</span><div class="score-container"><div class="score-bar" style="width:${scorePct}%"></div></div><small style="color:${scorePct>80?'green':'orange'}">${scorePct}% de confiance</small><br><button class="btn-add-plant" onclick="addIdentifiedPlant('${commonName.replace(/'/g, "\\'")}')">📍 Ajouter à la carte</button></div></div>`; container.innerHTML += html; }); container.innerHTML += "<button onclick='openPlantNetModal()' style='width:100%; margin-top:10px; padding:10px;'>🔄 Nouvelle Photo</button>"; }
-function addIdentifiedPlant(plantName) { closePlantNetModal(); if(userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("Point placé au centre de l'écran"); } openModal(); document.getElementById('input-emoji').value = "🌿"; document.getElementById('input-note').value = plantName; }
-
-// --- 11. SUCCES ---
-function showAchievements() { const content = document.getElementById('achievements-content'); content.innerHTML = ""; const totalPoints = savedPoints.length; const totalTrips = savedTrips.length; const totalDist = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalElevation = savedTrips.reduce((acc, t) => acc + (t.elevationGain || 0), 0); const totalPhotos = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.filter(h => h.photo).length : 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); let daysSinceStart = 0; if (savedPoints.length > 0) { const firstDate = new Date(Math.min(...savedPoints.map(p => p.id))); daysSinceStart = (Date.now() - firstDate) / (1000 * 60 * 60 * 24); } const badges = [ { id: 'start', icon: '🌱', title: 'Premiers Pas', desc: '1er point enregistré', check: () => totalPoints >= 1 }, { id: 'walker', icon: '🥾', title: 'Promeneur', desc: '10 km parcourus', check: () => totalDist >= 10 }, { id: 'paparazzi', icon: '📷', title: 'Paparazzi', desc: '5 photos prises', check: () => totalPhotos >= 5 }, { id: 'collec', icon: '🍄', title: 'Collectionneur', desc: '50 points trouvés', check: () => totalPoints >= 50 }, { id: 'master', icon: '🧙', title: 'Grand Sage', desc: '100 points trouvés', check: () => totalPoints >= 100 }, { id: 'ecureuil', icon: '🌰', title: 'Écureuil', desc: '20 trouvailles (Cèpes, Châtaignes...)', check: () => savedPoints.filter(p => ["🍄","🌰","🍂"].includes(p.emoji)).length >= 20 }, { id: 'marathon', icon: '🏃', title: 'Marathonien', desc: '42 km cumulés', check: () => totalDist >= 42 }, { id: 'ultra', icon: '🚀', title: 'Ultra-Trail', desc: '100 km cumulés', check: () => totalDist >= 100 }, { id: 'climber', icon: '⛰️', title: 'Grimpeur', desc: '500m D+ cumulé', check: () => totalElevation >= 500 }, { id: 'sherpa', icon: '🏔️', title: 'Sherpa', desc: '2000m D+ cumulé', check: () => totalElevation >= 2000 }, { id: 'longtrip', icon: '⏱️', title: 'Longue Marche', desc: 'Une rando de plus de 3h', check: () => savedTrips.some(t => t.duration > 10800000) }, { id: 'earlybird', icon: '🌅', title: 'Lève-tôt', desc: 'Point créé entre 5h et 8h du matin', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 5 && h < 8; }) }, { id: 'night', icon: '🦉', title: 'Oiseau de Nuit', desc: 'Sortie nocturne (22h-5h)', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 22 || h < 5; }) }, { id: 'rain', icon: '🌧️', title: 'Botte de Pluie', desc: 'Sortie sous la pluie', check: () => savedPoints.some(p => (p.weather || "").match(/Pluie|Averses|Orage/)) }, { id: 'winter', icon: '❄️', title: 'Yéti', desc: 'Sortie en Hiver (Déc-Fév)', check: () => savedPoints.some(p => { const m = new Date(p.id).getMonth(); return m === 11 || m === 0 || m === 1; }) }, { id: 'writer', icon: '✍️', title: 'Romancier', desc: '20 notes dans le carnet', check: () => totalHistory >= 20 }, { id: 'veteran', icon: '🎖️', title: 'Vétéran', desc: 'Utilise l\'app depuis 1 an', check: () => daysSinceStart >= 365 }, { id: 'addict', icon: '🔥', title: 'Accro', desc: '50 trajets enregistrés', check: () => totalTrips >= 50 } ]; let html = '<div class="achievements-grid">'; let unlockedCount = 0; badges.forEach(b => { const unlocked = b.check(); if(unlocked) unlockedCount++; html += `<div class="badge-card ${unlocked ? 'unlocked' : ''}"><span class="badge-icon">${b.icon}</span><span class="badge-title">${b.title}</span><span class="badge-desc">${b.desc}</span></div>`; }); html += '</div>'; const summary = `<div style="text-align:center; margin-bottom:15px; color:#555; font-weight:bold;">🏆 Progression : ${unlockedCount} / ${badges.length} badges<div style="background:#eee; height:8px; border-radius:4px; margin-top:5px; overflow:hidden;"><div style="background:#f1c40f; height:100%; width:${(unlockedCount/badges.length)*100}%"></div></div></div>`; content.innerHTML = summary + html; document.getElementById('modal-achievements').classList.remove('hidden'); toggleMenu(); }
-function closeAchievements() { document.getElementById('modal-achievements').classList.add('hidden'); }
-
-// --- 12. NIVEAUX & PARTICULES ---
-function updateUserLevel() { const totalPoints = savedPoints.length; const totalKm = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); const xp = Math.floor((totalPoints * 100) + (totalKm * 50) + (totalHistory * 10)); let level = 1; let xpForNext = 500; let xpForCurrent = 0; let increment = 500; while (xp >= xpForNext) { level++; xpForCurrent = xpForNext; increment += 500; xpForNext += increment; } const titles = [ "Vagabond", "Promeneur", "Eclaireur", "Pisteur", "Traqueur", "Aventurier", "Explorateur", "Ranger", "Sentinelle", "Garde-Forestier", "Druide", "Chamane", "Maître des Bois", "Gardien Ancestral", "Ermite Légendaire", "Esprit de la Forêt", "Seigneur Sauvage", "Roi de Bégole", "Demi-Dieu", "Légende Vivante" ]; const titleIndex = Math.min(level - 1, titles.length - 1); const title = titles[titleIndex]; const elTitle = document.getElementById('user-title'); const elLvl = document.getElementById('user-lvl'); const elXpText = document.getElementById('user-xp-text'); const elBar = document.getElementById('user-xp-bar'); if(elTitle) elTitle.innerText = title; if(elLvl) elLvl.innerText = `Niv. ${level}`; const range = xpForNext - xpForCurrent; const currentInLevel = xp - xpForCurrent; const percent = Math.min(100, Math.max(0, (currentInLevel / range) * 100)); if(elXpText) elXpText.innerText = `${Math.round(currentInLevel)} / ${Math.round(range)} XP (Total: ${xp})`; if(elBar) elBar.style.width = `${percent}%`; if (level < 5) elBar.style.background = "#2ecc71"; else if (level < 10) elBar.style.background = "#3498db"; else if (level < 15) elBar.style.background = "#9b59b6"; else elBar.style.background = "linear-gradient(90deg, #f1c40f, #e67e22)"; }
-function triggerWeatherEffect(weatherDesc) { const container = document.getElementById('weather-overlay'); if(!container) return; container.innerHTML = ''; document.body.classList.remove('weather-active', 'weather-fading'); container.style.opacity = '1'; if (!weatherDesc) return; const w = weatherDesc.toLowerCase(); let type = null; if (w.includes('pluie') || w.includes('averse') || w.includes('orage')) type = 'rain'; if (w.includes('neige') || w.includes('flocon')) type = 'snow'; if (type) { document.body.classList.add('weather-active'); const count = type === 'rain' ? 50 : 30; for (let i = 0; i < count; i++) { const p = document.createElement('div'); p.classList.add(type); p.style.left = Math.random() * 100 + 'vw'; p.style.animationDuration = (Math.random() * 1 + 0.5) + 's'; if(type === 'snow') { p.style.width = p.style.height = (Math.random() * 5 + 3) + 'px'; p.style.animationDuration = (Math.random() * 3 + 2) + 's'; } container.appendChild(p); } setTimeout(() => { document.body.classList.add('weather-fading'); }, 4000); setTimeout(() => { document.body.classList.remove('weather-active', 'weather-fading'); container.innerHTML = ''; }, 5000); } }
-
-// --- DÉMARRAGE DE L'APPLICATION ---
 // --- DÉMARRAGE DE L'APPLICATION ---
 async function startApp() {
     await initDB();
@@ -968,5 +1008,4 @@ async function startApp() {
         toggleSoundscape(); 
     }
 }
-startApp();
 startApp();

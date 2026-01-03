@@ -592,3 +592,32 @@ input:checked + .slider:before { transform: translateX(21px); }
     from { transform: translateX(-150vw); }
     to { transform: translateX(150vw); }
 }
+
+/* =========================================
+   24. MODE NUIT PROFONDE (VISION NOCTURNE)
+   ========================================= */
+/* L'application du filtre sur le fond de carte (Tuiles) */
+body.deep-night-active .leaflet-tile-pane {
+    /* grayscale(0.9) : Presque noir et blanc
+       brightness(0.4) : Très sombre
+       contrast(1.4) : Contraste forcé pour voir les chemins
+       sepia(0.4) + hue-rotate : Donne la teinte bleu-vert nuit (Effet Purkinje)
+    */
+    filter: grayscale(0.9) brightness(0.4) contrast(1.4) sepia(0.4) hue-rotate(170deg);
+    transition: filter 1.5s ease-in-out;
+}
+
+/* On assombrit aussi les marqueurs et les clusters pour ne pas éblouir */
+body.deep-night-active .leaflet-marker-pane,
+body.deep-night-active .leaflet-shadow-pane {
+    filter: brightness(0.7) saturate(0.7);
+    transition: filter 1.5s ease-in-out;
+}
+
+/* Adaptation des popups en mode nuit profonde */
+body.deep-night-active .leaflet-popup-content-wrapper,
+body.deep-night-active .leaflet-popup-tip {
+    background: #1a252f !important;
+    color: #bdc3c7 !important;
+    border: 1px solid #34495e;
+}
