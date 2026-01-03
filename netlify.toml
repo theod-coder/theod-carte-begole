@@ -1,0 +1,13 @@
+[build]
+  base = "Projet Carte Bégole"
+  publish = "."
+  ignore = "false"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Autorise la caméra et l'orientation pour la Réalité Augmentée
+    Permissions-Policy = "camera=(self), geolocation=(self), gyroscope=(self), magnetometer=(self), accelerometer=(self)"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
