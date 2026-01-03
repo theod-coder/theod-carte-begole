@@ -90,15 +90,6 @@
                     <span class="grid-icon">🌿</span><span class="grid-text">Identifier<br>une Plante</span>
                 </button>
 
-                <button onclick="startAR()" class="btn-grid" style="background:#e74c3c;">
-                    <span class="grid-icon">🕶️</span><span class="grid-text">Réalité<br>Augmentée</span>
-                </button>
-                
-                <label for="geophoto-input" class="btn-grid label-grid" style="background:#e67e22;">
-                    <span class="grid-icon">🖼️</span><span class="grid-text">Importer<br>une Photo</span>
-                    <input type="file" id="geophoto-input" accept="image/jpeg,image/png" style="opacity:0; position:absolute; z-index:-1;" onchange="handleGeoPhoto(this)">
-                </label>
-
                 <button onclick="openPisteur()" class="btn-grid" style="background:#795548;">
                     <span class="grid-icon">🐾</span>
                     <span class="grid-text">Guide du<br>Pisteur</span>
@@ -223,13 +214,11 @@
     </div>
 
     <div id="lightbox-overlay" class="hidden" onclick="closeLightbox()"><img id="lightbox-img" src="" alt="Photo en grand"></div>
-    <div id="ar-screen" class="hidden"><video id="ar-video" autoplay playsinline muted></video><div id="ar-points-container"></div><div class="ar-ui-top"><span style="font-weight:bold; color:white; text-shadow:0 1px 3px black;">🕶️ Mode AR</span><button onclick="stopAR()" class="btn-cancel" style="padding:5px 15px; font-size:12px;">Fermer</button></div><div class="ar-ui-bottom"><p style="color:white; font-size:12px; text-align:center; text-shadow:0 1px 3px black;">Pointe ton téléphone vers l'horizon.<br>Rayon : 1 km.</p></div></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
-    <script src="script.js?v=4"></script>
+    <script src="script.js?v=7"></script>
 
 </body>
 </html>

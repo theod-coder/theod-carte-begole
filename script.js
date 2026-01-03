@@ -24,7 +24,6 @@ fetch('village.json').then(r => r.json()).then(data => {
 // --- 2. VARIABLES GLOBALES ---
 // ============================================================
 var savedPoints = [], savedParcels = [], savedTrips = [];
-var tempImportedPhoto = null; 
 const SECRET_EMOJIS = ["🍄", "🍄‍🟫", "🤫"]; 
 var isIntruderMode = false; 
 
@@ -420,7 +419,7 @@ function stopReplay() {
 function updateModalEnvInfo() { currentEnv.fullString = `${currentEnv.weather} ${currentEnv.temp!="--"?currentEnv.temp+"°C":""} • ${currentEnv.moon}`; const el1 = document.getElementById('point-env-info'), el2 = document.getElementById('history-env-info'); if(el1) el1.innerText = "Conditions : " + currentEnv.fullString; if(el2) el2.innerText = "Météo : " + currentEnv.fullString; }
 function openModal() { updateModalEnvInfo(); document.getElementById('modal-overlay').classList.remove('hidden'); }
 function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); tempImportedPhoto = null; }
-async function confirmAddPoint() { const newPoint = { id:Date.now(), lat:tempLatLng.lat, lng:tempLatLng.lng, note:document.getElementById('input-note').value, emoji:document.getElementById('input-emoji').value||"📍", date:new Date().toLocaleDateString(), weather:currentEnv.fullString, history:[] }; if (tempImportedPhoto) { newPoint.history.push({ date: tempImportedPhoto.date, text: "Import Photo Géotaguée (Originale)", photo: tempImportedPhoto.photo, weather: "Import" }); newPoint.date = tempImportedPhoto.date; tempImportedPhoto = null; } await saveToDB('points', newPoint); savedPoints.push(newPoint); updateYearFilterOptions(); refreshMap(); closeModal(); showToast("Point ajouté !"); }
+async function confirmAddPoint() { const newPoint = { id:Date.now(), lat:tempLatLng.lat, lng:tempLatLng.lng, note:document.getElementById('input-note').value, emoji:document.getElementById('input-emoji').value||"📍", date:new Date().toLocaleDateString(), weather:currentEnv.fullString, history:[] }; await saveToDB('points', newPoint); savedPoints.push(newPoint); updateYearFilterOptions(); refreshMap(); closeModal(); showToast("Point ajouté !"); }
 function refreshMap() { markersLayer.clearLayers(); savedPoints.forEach((p,i) => { if (isIntruderMode && SECRET_EMOJIS.includes(p.emoji)) return; if (currentFilterEmoji && p.emoji !== currentFilterEmoji) return; if (currentFilterText && !p.note.toLowerCase().includes(currentFilterText)) return; if (currentFilterYear !== 'all' && p.date.split('/')[2].substring(0,4) !== currentFilterYear) return; if (currentFilterMonth !== 'all' && parseInt(p.date.split('/')[1]) !== parseInt(currentFilterMonth)) return; L.marker([p.lat, p.lng], { icon: L.divIcon({className:'emoji-icon', html:p.emoji, iconSize:[30,30]}) }).bindPopup(`<div style="text-align:center;"><b style="font-size:14px;">${p.emoji} ${p.note}</b><br><span style="font-size:11px; color:#555;">📅 ${p.date}</span><br><small style="color:#8e44ad; font-weight:bold;">${p.weather||""}</small><br><small style="color:#666;">${p.history?p.history.length:0} entrées carnet</small><div style="margin-top:8px; display:flex; flex-direction:column; gap:5px;"><a href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}" target="_blank" class="popup-btn-go">🚀 Y aller</a><button class="btn-popup-edit" onclick="openEditModal(${i})">📝 Carnet / Modif</button></div></div>`).addTo(markersLayer); }); if(!document.getElementById('show-parcels-toggle').checked && !map.hasLayer(markersLayer)) map.addLayer(markersLayer); }
 function openEditModal(i) { currentEditingIndex=i; const p=savedPoints[i]; document.getElementById('edit-emoji').value=p.emoji; document.getElementById('edit-note').value=p.note; renderPointHistory(p.history); updateModalEnvInfo(); document.getElementById('modal-edit-point').classList.remove('hidden'); map.closePopup(); }
 function openEditTripModal(id) { const t=savedTrips.find(x=>x.id===id); if(t){ currentEditingTripId=id; document.getElementById('edit-trip-note').value=t.note||""; document.getElementById('modal-edit-trip').classList.remove('hidden'); }}
@@ -458,7 +457,48 @@ async function savePointEdits(){if(currentEditingIndex>-1){savedPoints[currentEd
 function deleteCurrentPoint(){ if(confirm("Voulez-vous vraiment supprimer ce point définitivement ?")) { deletePoint(currentEditingIndex); document.getElementById('modal-edit-point').classList.add('hidden'); } }
 async function deletePoint(i){await deleteFromDB('points',savedPoints[i].id);savedPoints.splice(i,1);refreshMap();}
 function exportData(){const d={points:savedPoints,trips:savedTrips,parcels:savedParcels};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d)],{type:'application/json'}));a.download='Begole_Backup.json';a.click();}
-function importData(i){const f=new FileReader();f.onload=async e=>{const d=JSON.parse(e.target.result);if(d.points)for(let p of d.points){if(!p.id)p.id=Date.now()+Math.random();await saveToDB('points',p);}location.reload();};f.readAsText(i.files[0]);}
+
+// --- FONCTION D'IMPORT CORRIGÉE (RESTAURO AUSSI LES TRAJETS) ---
+function importData(i) {
+    const f = new FileReader();
+    f.onload = async e => {
+        try {
+            const d = JSON.parse(e.target.result);
+
+            // 1. Importer les Points
+            if (d.points && Array.isArray(d.points)) {
+                for (let p of d.points) {
+                    if (!p.id) p.id = Date.now() + Math.random();
+                    await saveToDB('points', p);
+                }
+            }
+
+            // 2. Importer les Trajets (C'est ce qui manquait !)
+            if (d.trips && Array.isArray(d.trips)) {
+                for (let t of d.trips) {
+                    if (!t.id) t.id = Date.now() + Math.random();
+                    await saveToDB('trips', t);
+                }
+            }
+
+            // 3. Importer les Parcelles (Cadastre)
+            if (d.parcels && Array.isArray(d.parcels)) {
+                for (let pa of d.parcels) {
+                    if (!pa.id) pa.id = Date.now() + Math.random();
+                    await saveToDB('parcels', pa);
+                }
+            }
+
+            showToast("✅ Données restaurées avec succès !");
+            setTimeout(() => location.reload(), 1000); 
+
+        } catch (err) {
+            alert("Erreur lors de l'importation : " + err);
+        }
+    };
+    f.readAsText(i.files[0]);
+}
+
 function toggleLocation(){const b=document.getElementById('btn-loc');if(trackWatchId){navigator.geolocation.clearWatch(trackWatchId);trackWatchId=null;b.innerHTML="📍 Pos. Off";if(userMarker)map.removeLayer(userMarker);}else{b.innerHTML="🛑 Stop";trackWatchId=navigator.geolocation.watchPosition(p=>updateUserMarker(p.coords.latitude,p.coords.longitude,p.coords.accuracy,p.coords.heading),e=>{},{enableHighAccuracy:true});}}
 function updateUserMarker(lat,lng,acc,h){if(!userMarker){userMarker=L.marker([lat,lng],{icon:L.divIcon({className:'custom-container',html:'<div class="user-location-arrow">⬆️</div>',iconSize:[40,40]})}).addTo(map);userAccuracyCircle=L.circle([lat,lng],{radius:acc,color:'#3498db',fillOpacity:0.15}).addTo(map);}else{userMarker.setLatLng([lat,lng]);userAccuracyCircle.setLatLng([lat,lng]);userAccuracyCircle.setRadius(acc);if(!isCompassMode&&h){const a=userMarker.getElement().querySelector('.user-location-arrow');if(a)a.style.transform=`rotate(${h}deg)`;}}}
 function showToast(m){const c=document.getElementById('toast-container');const t=document.createElement('div');t.className='toast';t.textContent=m;c.appendChild(t);setTimeout(()=>t.classList.add('show'),10);setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},3000);}
@@ -541,61 +581,6 @@ async function handlePlantUpload(input) {
 
 function displayPlantResults(results) { const container = document.getElementById('plantnet-results'); container.innerHTML = "<h4 style='margin:0 0 10px 0;'>Résultats probables :</h4>"; const top3 = results.slice(0, 3); top3.forEach(res => { const scorePct = Math.round(res.score * 100); const scientificName = res.species.scientificNameWithoutAuthor; const commonName = (res.species.commonNames && res.species.commonNames.length > 0) ? res.species.commonNames[0] : scientificName; const refImage = (res.images && res.images.length > 0) ? res.images[0].url.m : ""; const html = `<div class="plant-result-card">${refImage ? `<img src="${refImage}" class="plant-thumb">` : ""}<div class="plant-info"><span class="plant-name">${commonName}</span><span class="plant-sci">${scientificName}</span><div class="score-container"><div class="score-bar" style="width:${scorePct}%"></div></div><small style="color:${scorePct>80?'green':'orange'}">${scorePct}% de confiance</small><br><button class="btn-add-plant" onclick="addIdentifiedPlant('${commonName.replace(/'/g, "\\'")}')">📍 Ajouter à la carte</button></div></div>`; container.innerHTML += html; }); container.innerHTML += "<button onclick='openPlantNetModal()' style='width:100%; margin-top:10px; padding:10px;'>🔄 Nouvelle Photo</button>"; }
 function addIdentifiedPlant(plantName) { closePlantNetModal(); if(userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("Point placé au centre de l'écran"); } openModal(); document.getElementById('input-emoji').value = "🌿"; document.getElementById('input-note').value = plantName; }
-
-// --- 15. IMPORT PHOTO ---
-function handleGeoPhoto(input) { 
-    if (!input.files || !input.files[0]) return; 
-    const file = input.files[0]; 
-    if (file.type === "image/heic" || file.name.toLowerCase().endsWith(".heic")) { alert("⚠️ Format HEIC détecté. Utilise JPEG."); return; }
-    showToast("⏳ Analyse GPS...");
-    EXIF.getData(file, async function() { 
-        const lat = EXIF.getTag(this, "GPSLatitude"); const lng = EXIF.getTag(this, "GPSLongitude"); 
-        if (!lat || !lng) { alert("⚠️ Aucune coordonnée GPS trouvée !"); return; } 
-        const toDecimal = (number, ref) => { let decimal = number[0] + number[1] / 60 + number[2] / 3600; return (ref === "S" || ref === "W") ? -decimal : decimal; }; 
-        const finalLat = toDecimal(lat, EXIF.getTag(this, "GPSLatitudeRef")||"N"); 
-        const finalLng = toDecimal(lng, EXIF.getTag(this, "GPSLongitudeRef")||"E"); 
-        const photoData = await compressImage(file, 800, 0.7); 
-        let dateStr = new Date().toLocaleDateString(); const exifDate = EXIF.getTag(this, "DateTimeOriginal");
-        if(exifDate) { const parts = exifDate.split(" ")[0].split(":"); if(parts.length === 3) dateStr = `${parts[2]}/${parts[1]}/${parts[0]}`; }
-        tempImportedPhoto = { date: dateStr, photo: photoData }; tempLatLng = { lat: finalLat, lng: finalLng }; 
-        map.setView(tempLatLng, 18); openModal(); document.getElementById('input-emoji').value = "📷"; document.getElementById('input-note').value = `Photo du ${dateStr}`; showToast("📍 Photo localisée !"); 
-    }); 
-    input.value = ""; 
-}
-
-// ============================================================
-// --- 17. AR ---
-// ============================================================
-var arInterval = null; var isARRunning = false; var deviceHeading = 0;
-function startAR() { 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert("⚠️ Caméra non supportée."); return; } 
-    document.getElementById('ar-screen').classList.add('ar-visible'); document.getElementById('ar-screen').classList.remove('hidden'); toggleMenu(); 
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => { document.getElementById('ar-video').srcObject = stream; }).catch(e => { alert("Erreur Caméra : " + e); stopAR(); });
-    isARRunning = true; 
-    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') { DeviceOrientationEvent.requestPermission(); } 
-    window.addEventListener('deviceorientation', handleAROrientation); arInterval = setInterval(updateARMarkers, 50); showToast("🕶️ AR Activée (Max 1km)"); 
-}
-function stopAR() { isARRunning = false; document.getElementById('ar-screen').classList.remove('ar-visible'); const video = document.getElementById('ar-video'); if (video.srcObject) { video.srcObject.getTracks().forEach(track => track.stop()); video.srcObject = null; } window.removeEventListener('deviceorientation', handleAROrientation); if (arInterval) clearInterval(arInterval); }
-function handleAROrientation(event) { if (event.webkitCompassHeading) { deviceHeading = event.webkitCompassHeading; } else if (event.alpha) { deviceHeading = 360 - event.alpha; } }
-function updateARMarkers() {
-    if (!isARRunning || !userMarker) return;
-    const container = document.getElementById('ar-points-container'); container.innerHTML = ""; 
-    const userLL = userMarker.getLatLng(); const fov = 60; 
-    savedPoints.forEach(p => {
-        const dist = map.distance(userLL, [p.lat, p.lng]); if (dist > 1000) return; 
-        const bearing = getBearing(userLL.lat, userLL.lng, p.lat, p.lng);
-        let diff = bearing - deviceHeading; while (diff < -180) diff += 360; while (diff > 180) diff -= 360;
-        if (Math.abs(diff) < (fov / 2)) {
-            const x = (0.5 + (diff / fov)) * window.innerWidth;
-            const el = document.createElement('div'); el.className = 'ar-marker'; el.innerHTML = `<span style="font-size:20px">${p.emoji}</span><br><b>${Math.round(dist)}m</b>`; el.style.left = `${x}px`; el.style.top = "50%"; container.appendChild(el);
-        }
-    });
-}
-function getBearing(startLat, startLng, destLat, destLng) {
-    const startLatRad = startLat * (Math.PI / 180); const startLngRad = startLng * (Math.PI / 180); const destLatRad = destLat * (Math.PI / 180); const destLngRad = destLng * (Math.PI / 180);
-    const y = Math.sin(destLngRad - startLngRad) * Math.cos(destLatRad); const x = Math.cos(startLatRad) * Math.sin(destLatRad) - Math.sin(startLatRad) * Math.cos(destLatRad) * Math.cos(destLngRad - startLngRad);
-    return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
-}
 
 // ============================================================
 // --- 18. GUIDE DU PISTEUR ---
