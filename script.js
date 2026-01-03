@@ -24,8 +24,10 @@ fetch('village.json').then(r => r.json()).then(data => {
 // --- 2. VARIABLES GLOBALES ---
 // ============================================================
 var savedPoints = [], savedParcels = [], savedTrips = [];
+var tempImportedPhoto = null; 
 const SECRET_EMOJIS = ["🍄", "🍄‍🟫", "🤫"]; 
 var isIntruderMode = false; 
+var currentAvatar = localStorage.getItem('begole_avatar') || 'man';
 
 var markersLayer = L.markerClusterGroup({
     maxClusterRadius: 50, spiderfyOnMaxZoom: true, showCoverageOnHover: false, zoomToBoundsOnClick: true,
@@ -56,7 +58,7 @@ var userMarker = null, userAccuracyCircle = null;
 var currentEnv = { moon: "", temp: "--", weather: "", fullString: "" };
 
 // ============================================================
-// --- 3. DB & DEMARRAGE ---
+// --- 3. DB ---
 // ============================================================
 const DB_NAME = "BegoleMapDB"; const DB_VERSION = 1; let db = null;
 function initDB() { return new Promise((r, j) => { const req = indexedDB.open(DB_NAME, DB_VERSION); req.onupgradeneeded = e => { db = e.target.result; if (!db.objectStoreNames.contains('points')) db.createObjectStore('points', { keyPath: 'id' }); if (!db.objectStoreNames.contains('parcels')) db.createObjectStore('parcels', { keyPath: 'id' }); if (!db.objectStoreNames.contains('trips')) db.createObjectStore('trips', { keyPath: 'id' }); }; req.onsuccess = e => { db = e.target.result; r(db); }; req.onerror = e => j("Erreur DB"); }); }
@@ -65,17 +67,6 @@ function deleteFromDB(s, id) { return new Promise((r, j) => { const tx = db.tran
 function loadAllFromDB(s) { return new Promise((r, j) => { const tx = db.transaction([s], "readonly"); const req = tx.objectStore(s).getAll(); req.onsuccess = () => r(req.result); }); }
 function clearStoreDB(s) { return new Promise((r, j) => { const tx = db.transaction([s], "readwrite"); tx.objectStore(s).clear(); tx.oncomplete = r; }); }
 
-async function startApp() {
-    await initDB();
-    const oldP = localStorage.getItem('myMapPoints');
-    if (oldP) { try { const parsed = JSON.parse(oldP); const existing = await loadAllFromDB('points'); if (existing.length === 0) { for (let p of parsed) { if(!p.id) p.id = Date.now() + Math.random(); await saveToDB('points', p); } } localStorage.removeItem('myMapPoints'); } catch(e) {} }
-    savedPoints = await loadAllFromDB('points'); savedParcels = await loadAllFromDB('parcels'); savedTrips = await loadAllFromDB('trips');
-    await cleanDuplicates();
-    updateYearFilterOptions(); refreshMap(); displayParcels(); checkCrashRecovery(); updateAstroWidget(); updateWeatherWidget(); updateUserLevel(); 
-    initShakeListener();
-}
-startApp();
-
 async function cleanDuplicates() { const seen = new Set(); const duplicates = []; const cleanList = []; savedPoints.forEach(p => { const key = `${p.lat.toFixed(6)}|${p.lng.toFixed(6)}|${p.emoji}`; if (seen.has(key)) { duplicates.push(p.id); } else { seen.add(key); cleanList.push(p); } }); if (duplicates.length > 0) { for (let id of duplicates) { await deleteFromDB('points', id); } savedPoints = cleanList; showToast(`🧹 Nettoyage : ${duplicates.length} doublons supprimés.`); } }
 async function checkStorageUsage() { if (navigator.storage && navigator.storage.estimate) { const est = await navigator.storage.estimate(); const pct = (est.usage / est.quota) * 100; const bar = document.getElementById('storage-bar'); if(bar) { document.getElementById('storage-text').innerText = `${(est.usage/1048576).toFixed(1)} MB (${pct.toFixed(2)}%)`; bar.style.width = pct < 1 ? "1%" : pct + "%"; bar.style.backgroundColor = pct > 80 ? "#e74c3c" : "#2ecc71"; } } }
 
@@ -83,17 +74,63 @@ async function checkStorageUsage() { if (navigator.storage && navigator.storage.
 // --- 4. NATURE : ASTRO & MÉTÉO (AVEC VENT) ---
 // ============================================================
 function updateAstroWidget() {
-    const date = new Date(); const year = date.getFullYear(), month = date.getMonth(), day = date.getDate();
-    let m = month; let y = year; if (m < 3) { y--; m += 12; } ++m;
-    let c = 365.25 * y, e = 30.6 * m, jd = c + e + day - 694039.09; jd /= 29.5305882; let b = parseInt(jd); jd -= b; b = Math.round(jd * 8); if (b >= 8) b = 0;
+    const date = new Date(); 
+    const year = date.getFullYear(), month = date.getMonth(), day = date.getDate();
+    
+    // --- 1. CALCUL DE LA LUNE ---
+    let m = month; let y = year; 
+    if (m < 3) { y--; m += 12; } 
+    ++m;
+    let c = 365.25 * y, e = 30.6 * m, jd = c + e + day - 694039.09; 
+    jd /= 29.5305882; 
+    let b = parseInt(jd); 
+    jd -= b; 
+    b = Math.round(jd * 8); 
+    if (b >= 8) b = 0;
+    
     const moons = ['🌑 Nouv.', '🌒 Crois.', '🌓 Premier', '🌔 Gib.', '🌕 Pleine', '🌖 Gib.', '🌗 Dernier', '🌘 Crois.'];
     currentEnv.moon = `Lune : ${moons[b]} ${(jd*100).toFixed(0)}%`; 
-    const moonEl = document.getElementById('astro-moon'); if(moonEl) moonEl.innerText = currentEnv.moon;
-    const now = new Date(); const start = new Date(now.getFullYear(), 0, 0); const dayOfYear = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+    
+    const moonEl = document.getElementById('astro-moon'); 
+    if(moonEl) moonEl.innerText = currentEnv.moon;
+    
+    // --- 2. CALCUL DU SOLEIL (Approx) ---
+    const now = new Date(); 
+    const start = new Date(now.getFullYear(), 0, 0); 
+    const dayOfYear = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+    
+    // Heure de coucher approximative selon le jour de l'année
     let sunsetHour = 19.5 + (Math.sin((dayOfYear - 80) * 0.0172) * 2.3); 
-    const currentHour = now.getHours() + now.getMinutes()/60; let remaining = sunsetHour - currentHour;
-    const sunEl = document.getElementById('astro-sun'); if(sunEl) { if (remaining < 0) { sunEl.innerText = "🌑 Nuit"; sunEl.classList.remove('sun-alert'); } else { const h = Math.floor(remaining), m = Math.floor((remaining - h) * 60); sunEl.innerText = `☀️ Reste ${h}h${pad(m)}`; sunEl.classList.toggle('sun-alert', remaining < 1); } }
-    document.body.classList.remove('theme-golden', 'theme-dark'); if (currentHour > sunsetHour || currentHour < 7) { document.body.classList.add('theme-dark'); } else if (remaining < 1 && remaining > 0) { document.body.classList.add('theme-golden'); }
+    const currentHour = now.getHours() + now.getMinutes()/60; 
+    let remaining = sunsetHour - currentHour;
+    
+    const sunEl = document.getElementById('astro-sun'); 
+    if(sunEl) { 
+        if (remaining < 0) { 
+            sunEl.innerText = "🌑 Nuit"; 
+            sunEl.classList.remove('sun-alert'); 
+        } else { 
+            const h = Math.floor(remaining), m = Math.floor((remaining - h) * 60); 
+            sunEl.innerText = `☀️ Reste ${h}h${pad(m)}`; 
+            sunEl.classList.toggle('sun-alert', remaining < 1); 
+        } 
+    }
+    
+    // --- 3. GESTION DES THÈMES & EFFETS ---
+    document.body.classList.remove('theme-golden', 'theme-dark'); 
+    
+    if (currentHour > sunsetHour || currentHour < 7) { 
+        document.body.classList.add('theme-dark'); 
+    } else if (remaining < 1 && remaining > 0) { 
+        document.body.classList.add('theme-golden'); 
+    }
+
+    // --- MISE À JOUR CONTINUE DES LUCIOLES ---
+    if (typeof manageFireflies === 'function') {
+        manageFireflies();
+    }
+    // --- MISE À JOUR AUDIO ---
+    if (typeof checkAndPlayAmbiance === 'function') checkAndPlayAmbiance();
 }
 
 function updateWeatherWidget() {
@@ -127,6 +164,19 @@ function updateWeatherWidget() {
         
         currentEnv.temp = temp; currentEnv.weather = desc; currentEnv.fullString = `${desc} ${temp}°C • ${currentEnv.moon}`;
         triggerWeatherEffect(desc);
+        
+        // MAJ Sonore & Nuages
+        if (typeof checkAndPlayAmbiance === 'function') checkAndPlayAmbiance();
+        
+        // Auto-nuages si mauvais temps
+        if ((code >= 1 && code <= 3) || (code >= 45 && code <= 48)) {
+            const toggle = document.getElementById('clouds-toggle');
+            if (toggle && !toggle.checked) {
+                toggle.checked = true;
+                if(typeof toggleClouds === 'function') toggleClouds();
+            }
+        }
+
     }).catch((e) => { console.error(e); });
 }
 
@@ -440,7 +490,21 @@ function getSpeedColor(speedMs) {
     return '#e74c3c';                // Rouge : Marche rapide (> 5 km/h)
 }
 
-function updateYearFilterOptions() { const s=document.getElementById('filter-year'); const cur=s.value; s.innerHTML='<option value="all">Toutes</option>'; const yrs=new Set(savedPoints.map(p=>p.date.split('/')[2].substring(0,4))); Array.from(yrs).sort().reverse().forEach(y=>{const o=document.createElement('option');o.value=y;o.innerText=y;s.appendChild(o);}); s.value=cur; }
+function updateYearFilterOptions() { 
+    const s = document.getElementById('filter-year'); 
+    if (!s) return; // --- FIX : SI L'ELEMENT N'EXISTE PAS, ON ARRÊTE ---
+    const cur = s.value; 
+    s.innerHTML = '<option value="all">Toutes</option>'; 
+    const yrs = new Set(savedPoints.map(p => p.date.split('/')[2].substring(0,4))); 
+    Array.from(yrs).sort().reverse().forEach(y => {
+        const o = document.createElement('option');
+        o.value = y; 
+        o.innerText = y; 
+        s.appendChild(o);
+    }); 
+    s.value = cur; 
+}
+
 function applyYearFilter(){ currentFilterYear=document.getElementById('filter-year').value; refreshMap(); toggleMenu(); }
 function applyMonthFilter(){ currentFilterMonth=document.getElementById('filter-month').value; refreshMap(); toggleMenu(); }
 function applyFilter(){ currentFilterEmoji=document.getElementById('filter-input').value.trim(); refreshMap(); toggleMenu(); }
@@ -457,6 +521,35 @@ async function savePointEdits(){if(currentEditingIndex>-1){savedPoints[currentEd
 function deleteCurrentPoint(){ if(confirm("Voulez-vous vraiment supprimer ce point définitivement ?")) { deletePoint(currentEditingIndex); document.getElementById('modal-edit-point').classList.add('hidden'); } }
 async function deletePoint(i){await deleteFromDB('points',savedPoints[i].id);savedPoints.splice(i,1);refreshMap();}
 function exportData(){const d={points:savedPoints,trips:savedTrips,parcels:savedParcels};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d)],{type:'application/json'}));a.download='Begole_Backup.json';a.click();}
+
+// =========================================
+// --- FONCTION DE SELECTION AVATAR ---
+// =========================================
+function initAvatarSelection() {
+    document.querySelectorAll('.avatar-option').forEach(e => e.classList.remove('selected'));
+    const el = document.getElementById('av-' + currentAvatar);
+    if(el) el.classList.add('selected');
+}
+
+function setAvatar(type) {
+    currentAvatar = type;
+    localStorage.setItem('begole_avatar', type);
+    
+    // Mise à jour visuelle du menu
+    document.querySelectorAll('.avatar-option').forEach(e => e.classList.remove('selected'));
+    document.getElementById('av-' + type).classList.add('selected');
+    
+    // Force la mise à jour immédiate du marqueur si on a une position
+    if (userMarker) {
+        const ll = userMarker.getLatLng();
+        // On relance la création du marqueur avec les mêmes coordonnées
+        map.removeLayer(userMarker);
+        userMarker = null;
+        let acc = userAccuracyCircle ? userAccuracyCircle.getRadius() : 20;
+        updateUserMarker(ll.lat, ll.lng, acc, 0); 
+    }
+    showToast("Avatar changé !");
+}
 
 // --- FONCTION D'IMPORT CORRIGÉE (RESTAURO AUSSI LES TRAJETS) ---
 function importData(i) {
@@ -500,7 +593,55 @@ function importData(i) {
 }
 
 function toggleLocation(){const b=document.getElementById('btn-loc');if(trackWatchId){navigator.geolocation.clearWatch(trackWatchId);trackWatchId=null;b.innerHTML="📍 Pos. Off";if(userMarker)map.removeLayer(userMarker);}else{b.innerHTML="🛑 Stop";trackWatchId=navigator.geolocation.watchPosition(p=>updateUserMarker(p.coords.latitude,p.coords.longitude,p.coords.accuracy,p.coords.heading),e=>{},{enableHighAccuracy:true});}}
-function updateUserMarker(lat,lng,acc,h){if(!userMarker){userMarker=L.marker([lat,lng],{icon:L.divIcon({className:'custom-container',html:'<div class="user-location-arrow">⬆️</div>',iconSize:[40,40]})}).addTo(map);userAccuracyCircle=L.circle([lat,lng],{radius:acc,color:'#3498db',fillOpacity:0.15}).addTo(map);}else{userMarker.setLatLng([lat,lng]);userAccuracyCircle.setLatLng([lat,lng]);userAccuracyCircle.setRadius(acc);if(!isCompassMode&&h){const a=userMarker.getElement().querySelector('.user-location-arrow');if(a)a.style.transform=`rotate(${h}deg)`;}}}
+
+// --- FONCTION DE MARQUEUR MISE À JOUR (AVATAR) ---
+function updateUserMarker(lat, lng, acc, h) {
+    // 1. Définition de l'icône selon l'avatar choisi
+    const avatars = {
+        'man': '🚶',
+        'boar': '🐗',
+        'deer': '🦌',
+        'bird': '🦅'
+    };
+    const iconChar = avatars[currentAvatar] || '🚶';
+    
+    // 2. Choix de l'animation
+    // La buse vole tout le temps, les autres marchent
+    let animClass = (currentAvatar === 'bird') ? 'anim-fly' : 'anim-walk';
+    
+    // ASTUCE : Orientation gauche/droite
+    // Les émojis regardent souvent vers la GAUCHE par défaut.
+    // Si on va vers l'Est (h entre 0 et 180), on inverse l'image (scaleX(-1))
+    // Note : Si h est null (pas de boussole), on laisse par défaut.
+    let flipStyle = "";
+    if (h !== null && h !== undefined) {
+        // Si cap vers l'Est (droite), on retourne l'émoji pour qu'il regarde devant
+        if (h > 0 && h < 180) flipStyle = "transform: scaleX(-1);"; 
+    }
+
+    const customIcon = L.divIcon({
+        className: 'custom-avatar-wrapper', // Classe vide pour éviter les styles par défaut Leaflet
+        // On insère l'émoji dans une div qui porte l'animation
+        html: `<div class="user-avatar-marker ${animClass}" style="${flipStyle}">${iconChar}</div>`,
+        iconSize: [40, 40],
+        iconAnchor: [20, 30] // Ancré au niveau des pieds
+    });
+
+    // 3. Création ou Mise à jour sur la carte
+    if (!userMarker) {
+        userMarker = L.marker([lat, lng], {icon: customIcon, zIndexOffset: 1000}).addTo(map);
+        userAccuracyCircle = L.circle([lat, lng], {radius: acc, color: '#3498db', fillOpacity: 0.15}).addTo(map);
+    } else {
+        userMarker.setLatLng([lat, lng]);
+        userMarker.setIcon(customIcon); // Important : met à jour l'icône (et donc l'orientation)
+        
+        if (userAccuracyCircle) {
+            userAccuracyCircle.setLatLng([lat, lng]);
+            userAccuracyCircle.setRadius(acc);
+        }
+    }
+}
+
 function showToast(m){const c=document.getElementById('toast-container');const t=document.createElement('div');t.className='toast';t.textContent=m;c.appendChild(t);setTimeout(()=>t.classList.add('show'),10);setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},3000);}
 function triggerHaptic(t){if(navigator.vibrate)try{navigator.vibrate(t==='radar'?[100,50,100]:(t==='success'?50:200));}catch(e){}}
 async function clearData(){if(confirm("Tout effacer ?")){await clearStoreDB('points');await clearStoreDB('parcels');await clearStoreDB('trips');location.reload();}}
@@ -512,13 +653,206 @@ async function requestWakeLock(){try{if('wakeLock'in navigator)wakeLock=await na
 async function releaseWakeLock(){if(wakeLock){await wakeLock.release();wakeLock=null;}}
 var lastClick=0; function togglePocketMode(){const e=document.getElementById('pocket-overlay');if(e.classList.contains('hidden-poche')){e.classList.remove('hidden-poche');toggleMenu();}else{if(Date.now()-lastClick<500)e.classList.add('hidden-poche');lastClick=Date.now();}}
 
-// --- 11. SUCCES ---
-function showAchievements() { const content = document.getElementById('achievements-content'); content.innerHTML = ""; const totalPoints = savedPoints.length; const totalTrips = savedTrips.length; const totalDist = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalElevation = savedTrips.reduce((acc, t) => acc + (t.elevationGain || 0), 0); const totalPhotos = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.filter(h => h.photo).length : 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); let daysSinceStart = 0; if (savedPoints.length > 0) { const firstDate = new Date(Math.min(...savedPoints.map(p => p.id))); daysSinceStart = (Date.now() - firstDate) / (1000 * 60 * 60 * 24); } const badges = [ { id: 'start', icon: '🌱', title: 'Premiers Pas', desc: '1er point enregistré', check: () => totalPoints >= 1 }, { id: 'walker', icon: '🥾', title: 'Promeneur', desc: '10 km parcourus', check: () => totalDist >= 10 }, { id: 'paparazzi', icon: '📷', title: 'Paparazzi', desc: '5 photos prises', check: () => totalPhotos >= 5 }, { id: 'collec', icon: '🍄', title: 'Collectionneur', desc: '50 points trouvés', check: () => totalPoints >= 50 }, { id: 'master', icon: '🧙', title: 'Grand Sage', desc: '100 points trouvés', check: () => totalPoints >= 100 }, { id: 'ecureuil', icon: '🌰', title: 'Écureuil', desc: '20 trouvailles (Cèpes, Châtaignes...)', check: () => savedPoints.filter(p => ["🍄","🌰","🍂"].includes(p.emoji)).length >= 20 }, { id: 'marathon', icon: '🏃', title: 'Marathonien', desc: '42 km cumulés', check: () => totalDist >= 42 }, { id: 'ultra', icon: '🚀', title: 'Ultra-Trail', desc: '100 km cumulés', check: () => totalDist >= 100 }, { id: 'climber', icon: '⛰️', title: 'Grimpeur', desc: '500m D+ cumulé', check: () => totalElevation >= 500 }, { id: 'sherpa', icon: '🏔️', title: 'Sherpa', desc: '2000m D+ cumulé', check: () => totalElevation >= 2000 }, { id: 'longtrip', icon: '⏱️', title: 'Longue Marche', desc: 'Une rando de plus de 3h', check: () => savedTrips.some(t => t.duration > 10800000) }, { id: 'earlybird', icon: '🌅', title: 'Lève-tôt', desc: 'Point créé entre 5h et 8h du matin', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 5 && h < 8; }) }, { id: 'night', icon: '🦉', title: 'Oiseau de Nuit', desc: 'Sortie nocturne (22h-5h)', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 22 || h < 5; }) }, { id: 'rain', icon: '🌧️', title: 'Botte de Pluie', desc: 'Sortie sous la pluie', check: () => savedPoints.some(p => (p.weather || "").match(/Pluie|Averses|Orage/)) }, { id: 'winter', icon: '❄️', title: 'Yéti', desc: 'Sortie en Hiver (Déc-Fév)', check: () => savedPoints.some(p => { const m = new Date(p.id).getMonth(); return m === 11 || m === 0 || m === 1; }) }, { id: 'writer', icon: '✍️', title: 'Romancier', desc: '20 notes dans le carnet', check: () => totalHistory >= 20 }, { id: 'veteran', icon: '🎖️', title: 'Vétéran', desc: 'Utilise l\'app depuis 1 an', check: () => daysSinceStart >= 365 }, { id: 'addict', icon: '🔥', title: 'Accro', desc: '50 trajets enregistrés', check: () => totalTrips >= 50 } ]; let html = '<div class="achievements-grid">'; let unlockedCount = 0; badges.forEach(b => { const unlocked = b.check(); if(unlocked) unlockedCount++; html += `<div class="badge-card ${unlocked ? 'unlocked' : ''}"><span class="badge-icon">${b.icon}</span><span class="badge-title">${b.title}</span><span class="badge-desc">${b.desc}</span></div>`; }); html += '</div>'; const summary = `<div style="text-align:center; margin-bottom:15px; color:#555; font-weight:bold;">🏆 Progression : ${unlockedCount} / ${badges.length} badges<div style="background:#eee; height:8px; border-radius:4px; margin-top:5px; overflow:hidden;"><div style="background:#f1c40f; height:100%; width:${(unlockedCount/badges.length)*100}%"></div></div></div>`; content.innerHTML = summary + html; document.getElementById('modal-achievements').classList.remove('hidden'); toggleMenu(); }
-function closeAchievements() { document.getElementById('modal-achievements').classList.add('hidden'); }
+// =========================================
+// --- 20. GESTION DES LUCIOLES ---
+// =========================================
+function manageFireflies() {
+    const isNight = document.body.classList.contains('theme-dark');
+    
+    // On cible le NOUVEAU conteneur dédié
+    const container = document.getElementById('firefly-overlay');
+    if (!container) return;
 
-// --- 12. NIVEAUX & PARTICULES ---
-function updateUserLevel() { const totalPoints = savedPoints.length; const totalKm = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); const xp = Math.floor((totalPoints * 100) + (totalKm * 50) + (totalHistory * 10)); let level = 1; let xpForNext = 500; let xpForCurrent = 0; let increment = 500; while (xp >= xpForNext) { level++; xpForCurrent = xpForNext; increment += 500; xpForNext += increment; } const titles = [ "Vagabond", "Promeneur", "Eclaireur", "Pisteur", "Traqueur", "Aventurier", "Explorateur", "Ranger", "Sentinelle", "Garde-Forestier", "Druide", "Chamane", "Maître des Bois", "Gardien Ancestral", "Ermite Légendaire", "Esprit de la Forêt", "Seigneur Sauvage", "Roi de Bégole", "Demi-Dieu", "Légende Vivante" ]; const titleIndex = Math.min(level - 1, titles.length - 1); const title = titles[titleIndex]; const elTitle = document.getElementById('user-title'); const elLvl = document.getElementById('user-lvl'); const elXpText = document.getElementById('user-xp-text'); const elBar = document.getElementById('user-xp-bar'); if(elTitle) elTitle.innerText = title; if(elLvl) elLvl.innerText = `Niv. ${level}`; const range = xpForNext - xpForCurrent; const currentInLevel = xp - xpForCurrent; const percent = Math.min(100, Math.max(0, (currentInLevel / range) * 100)); if(elXpText) elXpText.innerText = `${Math.round(currentInLevel)} / ${Math.round(range)} XP (Total: ${xp})`; if(elBar) elBar.style.width = `${percent}%`; if (level < 5) elBar.style.background = "#2ecc71"; else if (level < 10) elBar.style.background = "#3498db"; else if (level < 15) elBar.style.background = "#9b59b6"; else elBar.style.background = "linear-gradient(90deg, #f1c40f, #e67e22)"; }
-function triggerWeatherEffect(weatherDesc) { const container = document.getElementById('weather-overlay'); if(!container) return; container.innerHTML = ''; document.body.classList.remove('weather-active', 'weather-fading'); container.style.opacity = '1'; if (!weatherDesc) return; const w = weatherDesc.toLowerCase(); let type = null; if (w.includes('pluie') || w.includes('averse') || w.includes('orage')) type = 'rain'; if (w.includes('neige') || w.includes('flocon')) type = 'snow'; if (type) { document.body.classList.add('weather-active'); const count = type === 'rain' ? 50 : 30; for (let i = 0; i < count; i++) { const p = document.createElement('div'); p.classList.add(type); p.style.left = Math.random() * 100 + 'vw'; p.style.animationDuration = (Math.random() * 1 + 0.5) + 's'; if(type === 'snow') { p.style.width = p.style.height = (Math.random() * 5 + 3) + 'px'; p.style.animationDuration = (Math.random() * 3 + 2) + 's'; } container.appendChild(p); } setTimeout(() => { document.body.classList.add('weather-fading'); }, 4000); setTimeout(() => { document.body.classList.remove('weather-active', 'weather-fading'); container.innerHTML = ''; }, 5000); } }
+    // On s'assure que le conteneur a les bonnes propriétés CSS (au cas où)
+    container.style.position = 'fixed';
+    container.style.top = '0'; 
+    container.style.left = '0';
+    container.style.width = '100%';
+    container.style.height = '100%';
+    container.style.pointerEvents = 'none';
+    container.style.zIndex = '502'; // Juste au-dessus de la pluie (500)
+
+    // A. IL FAIT NUIT : On active les lucioles
+    if (isNight) {
+        // Vérification : Sont-elles déjà là ? (On évite les doublons)
+        if (container.querySelectorAll('.firefly').length > 0) return;
+
+        // On génère 30 lucioles
+        for (let i = 0; i < 30; i++) {
+            const f = document.createElement('div');
+            f.classList.add('firefly');
+            
+            // Position de départ aléatoire
+            f.style.left = Math.random() * 100 + 'vw';
+            f.style.top = Math.random() * 100 + 'vh';
+            
+            // Mouvement aléatoire
+            const moveX = (Math.random() * 160 - 80) + 'px';
+            const moveY = (Math.random() * 160 - 80) + 'px';
+            f.style.setProperty('--moveX', moveX);
+            f.style.setProperty('--moveY', moveY);
+            
+            // Animation décalée et durée variable
+            f.style.animationDelay = (Math.random() * -6) + 's'; 
+            f.style.animationDuration = (4 + Math.random() * 4) + 's';
+
+            container.appendChild(f);
+        }
+    
+    // B. IL FAIT JOUR : On nettoie
+    } else {
+        container.innerHTML = '';
+    }
+}
+
+// =========================================
+// --- 22. AMBIANCE SONORE DYNAMIQUE ---
+// =========================================
+var isSoundActive = false;
+var currentAudioTrack = null;
+
+const audioTracks = {
+    day: new Audio('sound_day.mp3'),
+    rain: new Audio('sound_rain.mp3'),
+    night: new Audio('sound_night.mp3')
+};
+
+Object.values(audioTracks).forEach(a => {
+    a.loop = true;
+    a.volume = 0; 
+});
+
+function toggleSoundscape() {
+    isSoundActive = !isSoundActive;
+    const btn = document.getElementById('btn-sound');
+    
+    // --- SAUVEGARDE L'ÉTAT ---
+    localStorage.setItem('begole_sound_pref', isSoundActive); 
+
+    if (isSoundActive) {
+        if(btn) {
+            btn.style.background = "#e67e22"; 
+            btn.querySelector('.grid-icon').innerText = "🔊";
+        }
+        showToast("🔈 Ambiance activée...");
+        checkAndPlayAmbiance(); 
+    } else {
+        if(btn) {
+            btn.style.background = "#34495e";
+            btn.querySelector('.grid-icon').innerText = "🔇";
+        }
+        stopAllSounds();
+    }
+}
+
+function checkAndPlayAmbiance() {
+    if (!isSoundActive) return;
+
+    let targetTrack = 'day'; 
+    const isNight = document.body.classList.contains('theme-dark');
+    const weatherText = currentEnv.weather ? currentEnv.weather.toLowerCase() : "";
+    const isRaining = weatherText.includes('pluie') || weatherText.includes('averse') || weatherText.includes('orage');
+
+    if (isNight) {
+        targetTrack = 'night';
+    } else if (isRaining) {
+        targetTrack = 'rain';
+    }
+
+    playTrack(targetTrack);
+}
+
+function playTrack(trackName) {
+    const newAudio = audioTracks[trackName];
+    if (currentAudioTrack === newAudio && !newAudio.paused) return;
+
+    if (currentAudioTrack) {
+        const oldTrack = currentAudioTrack;
+        let fadeOut = setInterval(() => {
+            if (oldTrack.volume > 0.1) {
+                oldTrack.volume -= 0.1;
+            } else {
+                oldTrack.pause();
+                oldTrack.volume = 0;
+                clearInterval(fadeOut);
+            }
+        }, 100);
+    }
+
+    currentAudioTrack = newAudio;
+    newAudio.play().then(() => {
+        let fadeIn = setInterval(() => {
+            if (newAudio.volume < 0.5) { 
+                newAudio.volume += 0.05;
+            } else {
+                clearInterval(fadeIn);
+            }
+        }, 100);
+    }).catch(e => {
+        console.log("Erreur lecture audio : " + e);
+    });
+}
+
+function stopAllSounds() {
+    Object.values(audioTracks).forEach(a => {
+        a.pause();
+        a.currentTime = 0;
+    });
+    currentAudioTrack = null;
+}
+
+// =========================================
+// --- 23. GESTION DES NUAGES ---
+// =========================================
+function toggleClouds() {
+    const isActive = document.getElementById('clouds-toggle').checked;
+    
+    // --- SAUVEGARDE ---
+    localStorage.setItem('begole_clouds_pref', isActive);
+
+    const container = document.getElementById('cloud-overlay');
+    if (!container) return;
+
+    if (isActive) {
+        container.classList.add('active');
+        if (container.children.length > 0) return;
+
+        for (let i = 0; i < 8; i++) {
+            const c = document.createElement('div');
+            c.classList.add('cloud');
+            const size = 150 + Math.random() * 300; 
+            c.style.width = size + 'px';
+            c.style.height = (size * 0.6) + 'px'; 
+            c.style.top = (Math.random() * 80 - 10) + 'vh'; 
+            const duration = 30 + Math.random() * 40; 
+            c.style.animationDuration = duration + 's';
+            c.style.animationDelay = (Math.random() * -50) + 's';
+            container.appendChild(c);
+        }
+    } else {
+        container.classList.remove('active');
+        setTimeout(() => {
+            if(!document.getElementById('clouds-toggle').checked) {
+                container.innerHTML = '';
+            }
+        }, 2000);
+    }
+}
+
+// =========================================
+// --- 18. GUIDE DU PISTEUR ---
+// =========================================
+const animalTracks = [ { name: "Sanglier", icon: "🐗", desc: "Deux gros sabots + deux 'gardes' marqués à l'arrière. Lourd.", size: "6 - 9 cm" }, { name: "Chevreuil", icon: "🦌", desc: "Sabots fins en cœur ❤️. Les gardes ne marquent que dans la boue.", size: "4 - 5 cm" }, { name: "Renard", icon: "🦊", desc: "Forme ovale. 4 doigts. Les griffes sont visibles.", size: "5 cm" }, { name: "Blaireau", icon: "🦡", desc: "5 doigts alignés (petite main d'ours). Longues griffes.", size: "5 - 7 cm" }, { name: "Lièvre / Lapin", icon: "🐇", desc: "Déplacement en 'Y'. Grandes pattes arrière devant.", size: "Variable" }, { name: "Chien", icon: "🐕", desc: "Pattes rondes, 4 doigts. Moins symétrique que le renard.", size: "Variable" }, { name: "Oiseau", icon: "🐦", desc: "3 doigts devant, 1 derrière.", size: "Petit" }, { name: "Écureuil", icon: "🐿️", desc: "4 doigts avant, 5 arrière. Au pied des arbres.", size: "3 - 4 cm" } ];
+function openPisteur() { const grid = document.getElementById('pisteur-grid'); grid.innerHTML = ""; animalTracks.forEach(t => { const html = `<div class="track-card"><div class="track-icon">${t.icon}</div><div class="track-name">${t.name}</div><div class="track-desc">${t.desc}</div><div class="track-size">📏 ${t.size}</div></div>`; grid.innerHTML += html; }); document.getElementById('modal-pisteur').classList.remove('hidden'); toggleMenu(); }
+function closePisteur() { document.getElementById('modal-pisteur').classList.add('hidden'); }
+
+// ============================================================
+// --- 19. SHAKE TO POINT ---
+// ============================================================
+var lastShakeX = 0, lastShakeY = 0, lastShakeZ = 0; var lastShakeTime = 0; const SHAKE_THRESHOLD = 25; 
+function initShakeListener() { if (window.DeviceMotionEvent) { window.addEventListener('devicemotion', handleShake, false); } }
+function handleShake(e) { var acc = e.accelerationIncludingGravity; if (!acc) return; var currTime = Date.now(); if ((currTime - lastShakeTime) > 2000) { var diff = Math.abs(acc.x + acc.y + acc.z - lastShakeX - lastShakeY - lastShakeZ); if (diff > SHAKE_THRESHOLD) { triggerShakeAction(); lastShakeTime = currTime; } lastShakeX = acc.x; lastShakeY = acc.y; lastShakeZ = acc.z; } }
+function triggerShakeAction() { triggerHaptic('success'); if (userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("⚠️ GPS non fixé : Point au centre"); } openModal(); document.getElementById('input-emoji').value = "📍"; document.getElementById('input-note').value = "Point Shake 🫨"; showToast("📍 Shake ! Nouveau point créé."); }
 
 // ============================================================
 // --- 14. PLANTNET (API CORRIGÉE & COMPRESSION) ---
@@ -582,17 +916,57 @@ async function handlePlantUpload(input) {
 function displayPlantResults(results) { const container = document.getElementById('plantnet-results'); container.innerHTML = "<h4 style='margin:0 0 10px 0;'>Résultats probables :</h4>"; const top3 = results.slice(0, 3); top3.forEach(res => { const scorePct = Math.round(res.score * 100); const scientificName = res.species.scientificNameWithoutAuthor; const commonName = (res.species.commonNames && res.species.commonNames.length > 0) ? res.species.commonNames[0] : scientificName; const refImage = (res.images && res.images.length > 0) ? res.images[0].url.m : ""; const html = `<div class="plant-result-card">${refImage ? `<img src="${refImage}" class="plant-thumb">` : ""}<div class="plant-info"><span class="plant-name">${commonName}</span><span class="plant-sci">${scientificName}</span><div class="score-container"><div class="score-bar" style="width:${scorePct}%"></div></div><small style="color:${scorePct>80?'green':'orange'}">${scorePct}% de confiance</small><br><button class="btn-add-plant" onclick="addIdentifiedPlant('${commonName.replace(/'/g, "\\'")}')">📍 Ajouter à la carte</button></div></div>`; container.innerHTML += html; }); container.innerHTML += "<button onclick='openPlantNetModal()' style='width:100%; margin-top:10px; padding:10px;'>🔄 Nouvelle Photo</button>"; }
 function addIdentifiedPlant(plantName) { closePlantNetModal(); if(userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("Point placé au centre de l'écran"); } openModal(); document.getElementById('input-emoji').value = "🌿"; document.getElementById('input-note').value = plantName; }
 
-// ============================================================
-// --- 18. GUIDE DU PISTEUR ---
-// ============================================================
-const animalTracks = [ { name: "Sanglier", icon: "🐗", desc: "Deux gros sabots + deux 'gardes' marqués à l'arrière. Lourd.", size: "6 - 9 cm" }, { name: "Chevreuil", icon: "🦌", desc: "Sabots fins en cœur ❤️. Les gardes ne marquent que dans la boue.", size: "4 - 5 cm" }, { name: "Renard", icon: "🦊", desc: "Forme ovale. 4 doigts. Les griffes sont visibles.", size: "5 cm" }, { name: "Blaireau", icon: "🦡", desc: "5 doigts alignés (petite main d'ours). Longues griffes.", size: "5 - 7 cm" }, { name: "Lièvre / Lapin", icon: "🐇", desc: "Déplacement en 'Y'. Grandes pattes arrière devant.", size: "Variable" }, { name: "Chien", icon: "🐕", desc: "Pattes rondes, 4 doigts. Moins symétrique que le renard.", size: "Variable" }, { name: "Oiseau", icon: "🐦", desc: "3 doigts devant, 1 derrière.", size: "Petit" }, { name: "Écureuil", icon: "🐿️", desc: "4 doigts avant, 5 arrière. Au pied des arbres.", size: "3 - 4 cm" } ];
-function openPisteur() { const grid = document.getElementById('pisteur-grid'); grid.innerHTML = ""; animalTracks.forEach(t => { const html = `<div class="track-card"><div class="track-icon">${t.icon}</div><div class="track-name">${t.name}</div><div class="track-desc">${t.desc}</div><div class="track-size">📏 ${t.size}</div></div>`; grid.innerHTML += html; }); document.getElementById('modal-pisteur').classList.remove('hidden'); toggleMenu(); }
-function closePisteur() { document.getElementById('modal-pisteur').classList.add('hidden'); }
+// --- 11. SUCCES ---
+function showAchievements() { const content = document.getElementById('achievements-content'); content.innerHTML = ""; const totalPoints = savedPoints.length; const totalTrips = savedTrips.length; const totalDist = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalElevation = savedTrips.reduce((acc, t) => acc + (t.elevationGain || 0), 0); const totalPhotos = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.filter(h => h.photo).length : 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); let daysSinceStart = 0; if (savedPoints.length > 0) { const firstDate = new Date(Math.min(...savedPoints.map(p => p.id))); daysSinceStart = (Date.now() - firstDate) / (1000 * 60 * 60 * 24); } const badges = [ { id: 'start', icon: '🌱', title: 'Premiers Pas', desc: '1er point enregistré', check: () => totalPoints >= 1 }, { id: 'walker', icon: '🥾', title: 'Promeneur', desc: '10 km parcourus', check: () => totalDist >= 10 }, { id: 'paparazzi', icon: '📷', title: 'Paparazzi', desc: '5 photos prises', check: () => totalPhotos >= 5 }, { id: 'collec', icon: '🍄', title: 'Collectionneur', desc: '50 points trouvés', check: () => totalPoints >= 50 }, { id: 'master', icon: '🧙', title: 'Grand Sage', desc: '100 points trouvés', check: () => totalPoints >= 100 }, { id: 'ecureuil', icon: '🌰', title: 'Écureuil', desc: '20 trouvailles (Cèpes, Châtaignes...)', check: () => savedPoints.filter(p => ["🍄","🌰","🍂"].includes(p.emoji)).length >= 20 }, { id: 'marathon', icon: '🏃', title: 'Marathonien', desc: '42 km cumulés', check: () => totalDist >= 42 }, { id: 'ultra', icon: '🚀', title: 'Ultra-Trail', desc: '100 km cumulés', check: () => totalDist >= 100 }, { id: 'climber', icon: '⛰️', title: 'Grimpeur', desc: '500m D+ cumulé', check: () => totalElevation >= 500 }, { id: 'sherpa', icon: '🏔️', title: 'Sherpa', desc: '2000m D+ cumulé', check: () => totalElevation >= 2000 }, { id: 'longtrip', icon: '⏱️', title: 'Longue Marche', desc: 'Une rando de plus de 3h', check: () => savedTrips.some(t => t.duration > 10800000) }, { id: 'earlybird', icon: '🌅', title: 'Lève-tôt', desc: 'Point créé entre 5h et 8h du matin', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 5 && h < 8; }) }, { id: 'night', icon: '🦉', title: 'Oiseau de Nuit', desc: 'Sortie nocturne (22h-5h)', check: () => savedPoints.some(p => { const h = new Date(p.id).getHours(); return h >= 22 || h < 5; }) }, { id: 'rain', icon: '🌧️', title: 'Botte de Pluie', desc: 'Sortie sous la pluie', check: () => savedPoints.some(p => (p.weather || "").match(/Pluie|Averses|Orage/)) }, { id: 'winter', icon: '❄️', title: 'Yéti', desc: 'Sortie en Hiver (Déc-Fév)', check: () => savedPoints.some(p => { const m = new Date(p.id).getMonth(); return m === 11 || m === 0 || m === 1; }) }, { id: 'writer', icon: '✍️', title: 'Romancier', desc: '20 notes dans le carnet', check: () => totalHistory >= 20 }, { id: 'veteran', icon: '🎖️', title: 'Vétéran', desc: 'Utilise l\'app depuis 1 an', check: () => daysSinceStart >= 365 }, { id: 'addict', icon: '🔥', title: 'Accro', desc: '50 trajets enregistrés', check: () => totalTrips >= 50 } ]; let html = '<div class="achievements-grid">'; let unlockedCount = 0; badges.forEach(b => { const unlocked = b.check(); if(unlocked) unlockedCount++; html += `<div class="badge-card ${unlocked ? 'unlocked' : ''}"><span class="badge-icon">${b.icon}</span><span class="badge-title">${b.title}</span><span class="badge-desc">${b.desc}</span></div>`; }); html += '</div>'; const summary = `<div style="text-align:center; margin-bottom:15px; color:#555; font-weight:bold;">🏆 Progression : ${unlockedCount} / ${badges.length} badges<div style="background:#eee; height:8px; border-radius:4px; margin-top:5px; overflow:hidden;"><div style="background:#f1c40f; height:100%; width:${(unlockedCount/badges.length)*100}%"></div></div></div>`; content.innerHTML = summary + html; document.getElementById('modal-achievements').classList.remove('hidden'); toggleMenu(); }
+function closeAchievements() { document.getElementById('modal-achievements').classList.add('hidden'); }
 
-// ============================================================
-// --- 19. SHAKE TO POINT ---
-// ============================================================
-var lastShakeX = 0, lastShakeY = 0, lastShakeZ = 0; var lastShakeTime = 0; const SHAKE_THRESHOLD = 25; 
-function initShakeListener() { if (window.DeviceMotionEvent) { window.addEventListener('devicemotion', handleShake, false); } }
-function handleShake(e) { var acc = e.accelerationIncludingGravity; if (!acc) return; var currTime = Date.now(); if ((currTime - lastShakeTime) > 2000) { var diff = Math.abs(acc.x + acc.y + acc.z - lastShakeX - lastShakeY - lastShakeZ); if (diff > SHAKE_THRESHOLD) { triggerShakeAction(); lastShakeTime = currTime; } lastShakeX = acc.x; lastShakeY = acc.y; lastShakeZ = acc.z; } }
-function triggerShakeAction() { triggerHaptic('success'); if (userMarker) { tempLatLng = userMarker.getLatLng(); } else { tempLatLng = map.getCenter(); showToast("⚠️ GPS non fixé : Point au centre"); } openModal(); document.getElementById('input-emoji').value = "📍"; document.getElementById('input-note').value = "Point Shake 🫨"; showToast("📍 Shake ! Nouveau point créé."); }
+// --- 12. NIVEAUX & PARTICULES ---
+function updateUserLevel() { const totalPoints = savedPoints.length; const totalKm = savedTrips.reduce((acc, t) => acc + (t.distance || 0), 0); const totalHistory = savedPoints.reduce((acc, p) => acc + (p.history ? p.history.length : 0), 0); const xp = Math.floor((totalPoints * 100) + (totalKm * 50) + (totalHistory * 10)); let level = 1; let xpForNext = 500; let xpForCurrent = 0; let increment = 500; while (xp >= xpForNext) { level++; xpForCurrent = xpForNext; increment += 500; xpForNext += increment; } const titles = [ "Vagabond", "Promeneur", "Eclaireur", "Pisteur", "Traqueur", "Aventurier", "Explorateur", "Ranger", "Sentinelle", "Garde-Forestier", "Druide", "Chamane", "Maître des Bois", "Gardien Ancestral", "Ermite Légendaire", "Esprit de la Forêt", "Seigneur Sauvage", "Roi de Bégole", "Demi-Dieu", "Légende Vivante" ]; const titleIndex = Math.min(level - 1, titles.length - 1); const title = titles[titleIndex]; const elTitle = document.getElementById('user-title'); const elLvl = document.getElementById('user-lvl'); const elXpText = document.getElementById('user-xp-text'); const elBar = document.getElementById('user-xp-bar'); if(elTitle) elTitle.innerText = title; if(elLvl) elLvl.innerText = `Niv. ${level}`; const range = xpForNext - xpForCurrent; const currentInLevel = xp - xpForCurrent; const percent = Math.min(100, Math.max(0, (currentInLevel / range) * 100)); if(elXpText) elXpText.innerText = `${Math.round(currentInLevel)} / ${Math.round(range)} XP (Total: ${xp})`; if(elBar) elBar.style.width = `${percent}%`; if (level < 5) elBar.style.background = "#2ecc71"; else if (level < 10) elBar.style.background = "#3498db"; else if (level < 15) elBar.style.background = "#9b59b6"; else elBar.style.background = "linear-gradient(90deg, #f1c40f, #e67e22)"; }
+function triggerWeatherEffect(weatherDesc) { const container = document.getElementById('weather-overlay'); if(!container) return; container.innerHTML = ''; document.body.classList.remove('weather-active', 'weather-fading'); container.style.opacity = '1'; if (!weatherDesc) return; const w = weatherDesc.toLowerCase(); let type = null; if (w.includes('pluie') || w.includes('averse') || w.includes('orage')) type = 'rain'; if (w.includes('neige') || w.includes('flocon')) type = 'snow'; if (type) { document.body.classList.add('weather-active'); const count = type === 'rain' ? 50 : 30; for (let i = 0; i < count; i++) { const p = document.createElement('div'); p.classList.add(type); p.style.left = Math.random() * 100 + 'vw'; p.style.animationDuration = (Math.random() * 1 + 0.5) + 's'; if(type === 'snow') { p.style.width = p.style.height = (Math.random() * 5 + 3) + 'px'; p.style.animationDuration = (Math.random() * 3 + 2) + 's'; } container.appendChild(p); } setTimeout(() => { document.body.classList.add('weather-fading'); }, 4000); setTimeout(() => { document.body.classList.remove('weather-active', 'weather-fading'); container.innerHTML = ''; }, 5000); } }
+
+// --- DÉMARRAGE DE L'APPLICATION ---
+// --- DÉMARRAGE DE L'APPLICATION ---
+async function startApp() {
+    await initDB();
+    
+    // Récupération des données existantes (ancien format localStorage vers IndexedDB)
+    const oldP = localStorage.getItem('myMapPoints');
+    if (oldP) { try { const parsed = JSON.parse(oldP); const existing = await loadAllFromDB('points'); if (existing.length === 0) { for (let p of parsed) { if(!p.id) p.id = Date.now() + Math.random(); await saveToDB('points', p); } } localStorage.removeItem('myMapPoints'); } catch(e) {} }
+    
+    // Chargement des données
+    savedPoints = await loadAllFromDB('points'); 
+    savedParcels = await loadAllFromDB('parcels'); 
+    savedTrips = await loadAllFromDB('trips');
+    
+    await cleanDuplicates();
+    
+    // Initialisation Interface
+    updateYearFilterOptions(); 
+    refreshMap(); 
+    displayParcels(); 
+    checkCrashRecovery(); 
+    updateAstroWidget(); 
+    updateWeatherWidget(); 
+    updateUserLevel(); 
+    initAvatarSelection(); 
+    initShakeListener();
+
+    // --- RESTAURATION DES PRÉFÉRENCES UTILISATEUR ---
+    
+    // 1. Nuages
+    if (localStorage.getItem('begole_clouds_pref') === 'true') {
+        const cloudToggle = document.getElementById('clouds-toggle');
+        if (cloudToggle) {
+            cloudToggle.checked = true;
+            toggleClouds(); // Lance l'effet visuel
+        }
+    }
+
+    // 2. Son (Note : Les navigateurs bloquent parfois le son automatique sans clic)
+    if (localStorage.getItem('begole_sound_pref') === 'true') {
+        // On appelle la fonction qui va activer la variable et mettre le bouton en orange
+        toggleSoundscape(); 
+    }
+}
+startApp();
+startApp();
