@@ -655,6 +655,30 @@ async function startApp() {
     if (localStorage.getItem('begole_clouds_pref') === 'true') { const cloudToggle = document.getElementById('clouds-toggle'); if (cloudToggle) { cloudToggle.checked = true; toggleClouds(); } }
     if (localStorage.getItem('begole_sound_pref') === 'true') { toggleSoundscape(); }
 }
+
+// =========================================
+// --- GESTION DU PLEIN ÉCRAN ---
+// =========================================
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        // Demander le plein écran
+        document.documentElement.requestFullscreen().then(() => {
+            showToast("Mode Immersif Activé");
+        }).catch(err => {
+            console.log(`Erreur plein écran: ${err.message}`);
+            // Fallback pour iPhone (qui ne supporte pas toujours requestFullscreen de la même façon)
+            showToast("Appuyez sur 'Ajouter à l'écran d'accueil' pour le vrai plein écran");
+        });
+    } else {
+        // Quitter le plein écran
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+    // On ferme le menu pour profiter de la vue tout de suite
+    toggleMenu();
+}
+
 startApp();
 
 // --- ENREGISTREMENT PWA (SERVICE WORKER) ---

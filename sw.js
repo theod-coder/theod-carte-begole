@@ -1,5 +1,5 @@
 // Changement de version pour forcer la mise à jour du script
-const CACHE_NAME = 'begole-map-v5'; 
+const CACHE_NAME = 'begole-map-v6'; 
 
 const ASSETS_TO_CACHE = [
   './',

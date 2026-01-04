@@ -2,7 +2,7 @@
   "name": "Bégole Map 🌳",
   "short_name": "Bégole Map",
   "start_url": "./index.html",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#2ecc71",
