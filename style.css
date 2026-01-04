@@ -685,3 +685,23 @@ body.deep-night-active .leaflet-popup-tip {
         transform: translateY(-50px) translateX(var(--drift)) scale(1);
     }
 }
+
+/* =========================================
+   26. TROPHÉE DU JOUR
+   ========================================= */
+.trophy-anim {
+    width: 100%;
+    height: 100%;
+    font-size: 30px; /* Un peu plus petit pour bien tenir dans la case */
+    display: flex; 
+    justify-content: center; 
+    align-items: center;
+    filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8));
+    animation: trophy-bounce 2s infinite ease-in-out;
+    cursor: pointer;
+}
+
+@keyframes trophy-bounce {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-8px) scale(1.1); filter: drop-shadow(0 0 15px gold); }
+}

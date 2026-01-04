@@ -1,4 +1,6 @@
-const CACHE_NAME = 'begole-map-v1';
+// Changement de version pour forcer la mise à jour du script
+const CACHE_NAME = 'begole-map-v5'; 
+
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -18,23 +20,21 @@ const ASSETS_TO_CACHE = [
   'https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js'
 ];
 
-// Installation : Mise en cache des fichiers
 self.addEventListener('install', (event) => {
+  // Force l'activation immédiate du nouveau Service Worker
+  self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[Service Worker] Mise en cache globale');
-        return cache.addAll(ASSETS_TO_CACHE);
-      })
+      .then((cache) => cache.addAll(ASSETS_TO_CACHE))
   );
 });
 
-// Activation : Nettoyage des vieux caches si besoin
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keyList) => {
       return Promise.all(keyList.map((key) => {
         if (key !== CACHE_NAME) {
+          console.log('[SW] Nettoyage ancien cache', key);
           return caches.delete(key);
         }
       }));
@@ -42,13 +42,10 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Interception des requêtes : Servir le cache si hors ligne
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Si trouvé dans le cache, on le rend, sinon on va sur internet
-        return response || fetch(event.request);
-      })
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    })
   );
 });
