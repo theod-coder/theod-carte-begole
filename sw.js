@@ -1,5 +1,5 @@
 // On change le numéro de version pour forcer la mise à jour du cache
-const CACHE_NAME = 'begole-map-v11-modular'; 
+const CACHE_NAME = 'begole-map-v12-modular'; 
 
 const ASSETS_TO_CACHE = [
   './',

@@ -171,6 +171,7 @@ export function initEventListeners(map) {
     document.getElementById('weather-widget-btn').addEventListener('click', updateWeatherWidget);
 
     initAvatarSelection();
+    initAmbientEffects();
 }
 
 // ============================================================
@@ -996,5 +997,50 @@ function toggleMenuIfMobile() {
     const menu = document.getElementById('menu-items');
     if (!menu.classList.contains('hidden-mobile')) {
         menu.classList.add('hidden-mobile');
+    }
+}
+
+/**
+ * Génère les particules d'ambiance (Lucioles & Pollen)
+ * Utilise les variables CSS définies dans style.css
+ */
+function initAmbientEffects() {
+    // 1. Génération des Lucioles (Fireflies)
+    const fireflyContainer = document.getElementById('firefly-overlay');
+    if (fireflyContainer && fireflyContainer.children.length === 0) {
+        for (let i = 0; i < 20; i++) {
+            const f = document.createElement('div');
+            f.className = 'firefly';
+            
+            f.style.left = Math.random() * 100 + 'vw';
+            f.style.top = Math.random() * 100 + 'vh';
+            
+            f.style.animationDelay = Math.random() * 5 + 's';
+            
+            f.style.setProperty('--moveX', (Math.random() * 200 - 100) + 'px');
+            f.style.setProperty('--moveY', (Math.random() * 200 - 100) + 'px');
+            
+            fireflyContainer.appendChild(f);
+        }
+    }
+
+    // 2. Génération du Pollen
+    const pollenContainer = document.getElementById('pollen-overlay');
+    if (pollenContainer && pollenContainer.children.length === 0) {
+        for (let i = 0; i < 30; i++) {
+            const p = document.createElement('div'); // On crée 'p'
+            p.className = 'pollen';
+            
+            // CORRECTION ICI : On utilise 'p' et non 'f'
+            p.style.left = Math.random() * 100 + 'vw';
+            p.style.top = Math.random() * 100 + 'vh';
+            
+            p.style.animationDelay = Math.random() * 10 + 's';
+            p.style.animationDuration = (10 + Math.random() * 20) + 's';
+            
+            p.style.setProperty('--drift', (Math.random() * 150 - 75) + 'px');
+            
+            pollenContainer.appendChild(p);
+        }
     }
 }
