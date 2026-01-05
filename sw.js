@@ -1,17 +1,38 @@
-// Changement de version pour forcer la mise à jour du script
-const CACHE_NAME = 'begole-map-v6'; 
+// On change le numéro de version pour forcer la mise à jour du cache
+const CACHE_NAME = 'begole-map-v10-modular'; 
 
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
-  './script.js',
   './manifest.json',
   './village.json',
-  './logoV2.png',
-  './sound_day.mp3',
-  './sound_night.mp3',
-  './sound_rain.mp3',
+  
+  // Images
+  './logo/logoV2.png',
+  
+  // Scripts JS (Ajout des nouveaux fichiers !)
+  './js/main.js',
+  './js/config.js',
+  './js/utils.js',
+  './js/db.js',
+  './js/map.js',
+  './js/ui.js',
+  './js/tracking.js',
+  './js/audio.js',
+  './js/gamification.js',
+  
+  // --- NOUVEAUX FICHIERS ---
+  './js/state.js',
+  './js/modules/weather.js', 
+  // -------------------------
+
+  // Sons
+  './audios/sound_day.mp3',
+  './audios/sound_night.mp3',
+  './audios/sound_rain.mp3',
+
+  // Librairies externes
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css',
   'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css',
@@ -21,7 +42,6 @@ const ASSETS_TO_CACHE = [
 ];
 
 self.addEventListener('install', (event) => {
-  // Force l'activation immédiate du nouveau Service Worker
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME)

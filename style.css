@@ -705,3 +705,47 @@ body.deep-night-active .leaflet-popup-tip {
     0%, 100% { transform: translateY(0) scale(1); }
     50% { transform: translateY(-8px) scale(1.1); filter: drop-shadow(0 0 15px gold); }
 }
+
+/* ... Section existante ... */
+
+/* =========================================
+   13. REPLAY RANDO
+   ========================================= */
+#replay-controls { 
+    position: absolute; 
+    top: 90px; /* Un peu plus bas pour ne pas gêner */
+    left: 50%; 
+    transform: translateX(-50%); 
+    z-index: 2000; 
+    animation: popIn 0.5s; 
+}
+
+#btn-replay-stop {
+    background-color: #c0392b; 
+    color: white; 
+    border: none; 
+    padding: 10px 25px; 
+    border-radius: 30px; 
+    font-weight: 800; 
+    font-size: 14px; 
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    display: flex; 
+    align-items: center; 
+    gap: 10px;
+    animation: pulseRed 2s infinite; /* Clignotement pour rappeler qu'un truc tourne */
+}
+
+#btn-replay-stop:hover {
+    transform: scale(1.05);
+    background-color: #e74c3c;
+}
+
+.hiker-icon-marker { 
+    background: none; 
+    border: none; 
+    font-size: 30px; 
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); 
+    transition: all 0.1s linear; 
+    z-index: 1000 !important; 
+}
