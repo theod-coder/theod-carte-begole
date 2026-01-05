@@ -2,10 +2,10 @@ import { saveToDB } from './db.js';
 import { showToast, triggerHaptic, formatDuration, getSpeedColor } from './utils.js';
 import { updateDashboard } from './ui.js';
 import { checkTrophyProximity } from './gamification.js';
-import { getMapInstance, getTracksLayer } from './map.js';
+import { getMapInstance } from './map.js'; // getTracksLayer n'est plus importé ici car géré localement ou via map
 
 // --- État interne du Tracking ---
-let isTracking = false;
+let isRecording = false; // "isTracking" renommé en "isRecording" pour la clarté
 let trackWatchId = null;
 let currentPath = []; // [lat, lng, alt, speed]
 let currentStartTime = null;
@@ -15,37 +15,122 @@ let timerInterval = null;
 let wakeLock = null;
 let autoSaveInterval = null;
 
-// Calque spécifique pour le tracé en cours (différent de tracksLayer global)
+// Calque spécifique pour le tracé en cours
 let currentTraceLayer = null;
 
 // --- Initialisation ---
 
 /**
- * Prépare le module tracking
- * @param {L.Map} mapInstance - Référence à la carte (optionnel si on utilise getMapInstance)
+ * Prépare le module tracking et lance le suivi GPS passif (Point Bleu)
+ * @param {L.Map} mapInstance
  */
 export function initTracking(mapInstance) {
-    // On s'assure que le calque de tracé est prêt
+    // 1. Initialiser le calque de tracé
     if (!currentTraceLayer && mapInstance) {
         currentTraceLayer = L.layerGroup().addTo(mapInstance);
     }
+
+    // 2. Lancer le GPS immédiatement (Mode Passif)
+    startPassiveGPS();
 }
 
-// --- Fonctions Principales ---
+// --- Fonctions GPS ---
+
+function startPassiveGPS() {
+    if (trackWatchId) return; // Déjà lancé
+
+    if ('geolocation' in navigator) {
+        trackWatchId = navigator.geolocation.watchPosition(
+            onLocationUpdate, 
+            (err) => {
+                console.warn("Erreur GPS", err);
+                if(err.code === 1) showToast("⚠️ GPS refusé par l'utilisateur");
+                else showToast("⚠️ Signal GPS introuvable");
+            }, 
+            { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+        );
+    } else {
+        showToast("Géolocalisation non supportée");
+    }
+}
 
 /**
- * Active ou désactive l'enregistrement
- * Gère le bouton UI, le WakeLock et le GPS
+ * Callback appelé à chaque nouvelle position GPS
+ * Gère à la fois l'affichage (Point Bleu) et l'enregistrement (Si REC actif)
+ */
+function onLocationUpdate(pos) {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const alt = pos.coords.altitude || 0;
+    const acc = pos.coords.accuracy;
+    const head = pos.coords.heading;
+    let speed = pos.coords.speed;
+    const now = Date.now();
+
+    // 1. TOUJOURS mettre à jour l'UI (Point Bleu & Boussole)
+    document.dispatchEvent(new CustomEvent('tracking-update', { 
+        detail: { lat, lng, acc, head } 
+    }));
+
+    // Gamification (Trophée) - Marche tout le temps
+    const map = getMapInstance();
+    if (map) checkTrophyProximity(map, lat, lng);
+
+    // 2. SI ON N'ENREGISTRE PAS, ON S'ARRÊTE LÀ
+    if (!isRecording) return;
+
+    // --- LOGIQUE D'ENREGISTREMENT (REC) ---
+
+    // Calcul de vitesse manuel si null
+    if ((speed === null || speed === 0) && lastPositionTime && currentPath.length > 0) {
+        const lastPt = currentPath[currentPath.length - 1];
+        if (map) {
+            const distM = map.distance([lastPt[0], lastPt[1]], [lat, lng]);
+            const timeDiffS = (now - lastPositionTime) / 1000;
+            if (timeDiffS > 0) speed = distM / timeDiffS;
+        }
+    }
+    lastPositionTime = now;
+
+    // Calcul distance cumulée
+    if (map && currentPath.length > 0) {
+        const lastPt = currentPath[currentPath.length - 1];
+        const distSeg = map.distance([lastPt[0], lastPt[1]], [lat, lng]);
+        currentDistance += (distSeg / 1000); // km
+    }
+
+    // Mise à jour Dashboard
+    updateDashboard(alt, speed, currentDistance);
+
+    // Dessin sur la carte
+    if (currentTraceLayer && currentPath.length > 0) {
+        const lastPt = currentPath[currentPath.length - 1];
+        const segmentColor = getSpeedColor(speed);
+        
+        L.polyline([[lastPt[0], lastPt[1]], [lat, lng]], {
+            color: segmentColor, weight: 5, opacity: 0.8, lineCap: 'round'
+        }).addTo(currentTraceLayer);
+    }
+
+    // Ajout aux données [lat, lng, alt, speed]
+    const newPoint = [lat, lng, alt, speed || 0];
+    currentPath.push(newPoint);
+}
+
+// --- Fonctions Publiques (Boutons UI) ---
+
+/**
+ * Active ou désactive l'ENREGISTREMENT (REC)
  */
 export async function toggleTracking() {
     const btn = document.getElementById('btn-tracking');
     const map = getMapInstance();
 
-    if (!isTracking) {
-        // --- DÉMARRAGE ---
-        isTracking = true;
+    if (!isRecording) {
+        // --- DÉMARRAGE REC ---
+        isRecording = true;
         
-        // Reset des variables
+        // Reset données
         currentPath = [];
         currentDistance = 0;
         currentStartTime = new Date();
@@ -54,7 +139,7 @@ export async function toggleTracking() {
         // UI
         if (btn) {
             btn.innerHTML = "⏹️ Stop";
-            btn.className = "btn-stop-track"; // Change la couleur en rouge (CSS)
+            btn.className = "btn-stop-track";
         }
         document.getElementById('recording-container').classList.remove('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
@@ -62,34 +147,22 @@ export async function toggleTracking() {
         // Outils système
         startTimer();
         await requestWakeLock();
-        
-        // Sauvegarde de secours toutes les 10s
         autoSaveInterval = setInterval(saveTrackState, 10000);
 
-        // Carte
-        if (!currentTraceLayer && map) {
-            currentTraceLayer = L.layerGroup().addTo(map);
-        } else if (currentTraceLayer) {
-            currentTraceLayer.clearLayers();
-        }
-
-        // Géolocalisation
-        trackWatchId = navigator.geolocation.watchPosition(
-            updateTrackingPosition, 
-            (err) => console.warn("Erreur GPS", err), 
-            { enableHighAccuracy: true }
-        );
+        // Nettoyage visuel précédent
+        if (currentTraceLayer) currentTraceLayer.clearLayers();
 
         showToast("REC démarré 🌈");
         triggerHaptic('start');
 
+        // On s'assure que le GPS est bien lancé (si jamais)
+        startPassiveGPS();
+
     } else {
-        // --- ARRÊT ---
-        isTracking = false;
+        // --- ARRÊT REC ---
+        isRecording = false;
         
-        // Stop GPS
-        navigator.geolocation.clearWatch(trackWatchId);
-        trackWatchId = null;
+        // Note : On NE COUPE PAS le GPS (trackWatchId), on arrête juste d'enregistrer !
 
         // Stop Outils
         stopTimer();
@@ -98,8 +171,6 @@ export async function toggleTracking() {
             clearInterval(autoSaveInterval);
             autoSaveInterval = null;
         }
-        
-        // Nettoyage sauvegarde temporaire
         localStorage.removeItem('begole_temp_track');
 
         // UI
@@ -114,89 +185,20 @@ export async function toggleTracking() {
         if (currentPath.length > 0) {
             const endTime = new Date();
             const elevationData = calculateElevation(currentPath);
-            
             await saveTrip(currentPath, currentStartTime, endTime, currentDistance, elevationData);
-            
             alert(`Trajet terminé !\nDistance: ${currentDistance.toFixed(2)}km\nDénivelé: +${elevationData.gain}m`);
-            
-            // On envoie un événement pour dire à l'historique de se rafraîchir
             document.dispatchEvent(new CustomEvent('trip-saved'));
         }
 
-        // Nettoyage carte
         if (currentTraceLayer) currentTraceLayer.clearLayers();
     }
 }
 
 /**
- * Callback appelé à chaque nouvelle position GPS
- */
-function updateTrackingPosition(pos) {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-    const alt = pos.coords.altitude || 0;
-    let speed = pos.coords.speed;
-    const now = Date.now();
-
-    // Calcul de vitesse manuel si le GPS renvoie null (arrive souvent)
-    if ((speed === null || speed === 0) && lastPositionTime && currentPath.length > 0) {
-        const lastPt = currentPath[currentPath.length - 1];
-        const map = getMapInstance();
-        if (map) {
-            const distM = map.distance([lastPt[0], lastPt[1]], [lat, lng]);
-            const timeDiffS = (now - lastPositionTime) / 1000;
-            if (timeDiffS > 0) speed = distM / timeDiffS;
-        }
-    }
-    lastPositionTime = now;
-
-    // Gamification : Vérifier si on a atteint le trophée
-    const map = getMapInstance();
-    if (map) {
-        checkTrophyProximity(map, lat, lng);
-    }
-
-    // Calcul distance cumulée
-    if (map && currentPath.length > 0) {
-        const lastPt = currentPath[currentPath.length - 1];
-        const distSeg = map.distance([lastPt[0], lastPt[1]], [lat, lng]);
-        currentDistance += (distSeg / 1000); // km
-    }
-
-    // Mise à jour UI Dashboard
-    updateDashboard(alt, speed, currentDistance);
-
-    // Dessin sur la carte (Ligne colorée selon vitesse)
-    if (currentTraceLayer && currentPath.length > 0) {
-        const lastPt = currentPath[currentPath.length - 1];
-        const segmentColor = getSpeedColor(speed);
-        
-        L.polyline([[lastPt[0], lastPt[1]], [lat, lng]], {
-            color: segmentColor,
-            weight: 5,
-            opacity: 0.8,
-            lineCap: 'round'
-        }).addTo(currentTraceLayer);
-    }
-
-    // Ajout aux données
-    // Format compact: [lat, lng, alt, speed]
-    const newPoint = [lat, lng, alt, speed || 0];
-    currentPath.push(newPoint);
-
-    // Centrage automatique (si l'utilisateur n'a pas bougé la carte manuellement)
-    // Pour simplifier ici, on émet un event custom, ou on importe isAutoCentering de UI si besoin
-    // Mais pour garder tracking.js pur, on émet un événement de mise à jour position
-    document.dispatchEvent(new CustomEvent('tracking-update', { 
-        detail: { lat, lng, acc: pos.coords.accuracy, head: pos.coords.heading } 
-    }));
-}
-
-/**
- * Sauvegarde l'état actuel dans le LocalStorage (Recovery)
+ * Sauvegarde l'état (Recovery)
  */
 export function saveTrackState() {
-    if (isTracking && currentPath.length > 0) {
+    if (isRecording && currentPath.length > 0) {
         localStorage.setItem('begole_temp_track', JSON.stringify({
             path: currentPath,
             startTime: currentStartTime,
@@ -206,7 +208,7 @@ export function saveTrackState() {
 }
 
 /**
- * Vérifie au chargement si un trajet a été interrompu brutalement (crash/refresh)
+ * Vérifie Crash Recovery
  */
 export function checkCrashRecovery(mapInstance) {
     const temp = localStorage.getItem('begole_temp_track');
@@ -216,13 +218,13 @@ export function checkCrashRecovery(mapInstance) {
         const data = JSON.parse(temp);
         if (data && data.path && data.path.length > 0) {
             if (confirm("Un trajet en cours a été interrompu. Voulez-vous le reprendre ?")) {
-                // Restauration des données
+                // Restauration
                 currentPath = data.path;
                 currentStartTime = new Date(data.startTime);
                 currentDistance = data.distance;
                 
-                // Relance Tracking
-                isTracking = true;
+                // Relance REC
+                isRecording = true;
                 const btn = document.getElementById('btn-tracking');
                 if (btn) {
                     btn.innerHTML = "⏹️ Stop";
@@ -231,27 +233,19 @@ export function checkCrashRecovery(mapInstance) {
                 document.getElementById('recording-container').classList.remove('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
 
-                // Restauration Visuelle sur la carte
                 if (!currentTraceLayer && mapInstance) {
                     currentTraceLayer = L.layerGroup().addTo(mapInstance);
                 }
                 if (currentTraceLayer) {
-                    // On redessine tout le tracé d'un coup en rouge pour simplifier la restauration
                     L.polyline(currentPath.map(p => [p[0], p[1]]), {
-                        color: 'red',
-                        weight: 5
+                        color: 'red', weight: 5
                     }).addTo(currentTraceLayer);
                 }
 
-                // Relance des processus
                 startTimer();
                 requestWakeLock();
                 autoSaveInterval = setInterval(saveTrackState, 10000);
-                trackWatchId = navigator.geolocation.watchPosition(
-                    updateTrackingPosition, 
-                    null, 
-                    { enableHighAccuracy: true }
-                );
+                startPassiveGPS(); // Relance GPS
                 
                 showToast("Trajet restauré ♻️");
             } else {
@@ -259,7 +253,7 @@ export function checkCrashRecovery(mapInstance) {
             }
         }
     } catch (e) {
-        console.error("Erreur récupération trajet", e);
+        console.error("Erreur récupération", e);
         localStorage.removeItem('begole_temp_track');
     }
 }
@@ -269,10 +263,7 @@ export function checkCrashRecovery(mapInstance) {
 function startTimer() {
     const el = document.getElementById('recording-timer');
     if (!el) return;
-    
-    // Mise à jour immédiate
     el.innerText = formatDuration(new Date() - currentStartTime);
-    
     timerInterval = setInterval(() => {
         el.innerText = formatDuration(new Date() - currentStartTime);
     }, 1000);
@@ -289,9 +280,7 @@ async function requestWakeLock() {
         if ('wakeLock' in navigator) {
             wakeLock = await navigator.wakeLock.request('screen');
         }
-    } catch (e) {
-        console.warn("Wake Lock non supporté ou refusé", e);
-    }
+    } catch (e) { console.warn("Wake Lock fail", e); }
 }
 
 async function releaseWakeLock() {
@@ -302,31 +291,19 @@ async function releaseWakeLock() {
 }
 
 function calculateElevation(points) {
-    let gain = 0;
-    let loss = 0;
-    
+    let gain = 0; let loss = 0;
     if (points.length < 2) return { gain: 0, loss: 0 };
-    
-    // Index 2 est l'altitude dans notre tableau [lat, lng, alt, speed]
     let lastAlt = points[0][2];
-    
     for (let i = 1; i < points.length; i++) {
         let currAlt = points[i][2];
-        
-        // Filtrage simple : on ignore les sauts bizarres ou nuls
         if (currAlt !== null && lastAlt !== null && currAlt !== 0 && lastAlt !== 0) {
             let diff = currAlt - lastAlt;
-            
-            // Seuil de 2m pour éviter le bruit GPS
             if (Math.abs(diff) > 2) {
-                if (diff > 0) gain += diff;
-                else loss += Math.abs(diff);
-                
+                if (diff > 0) gain += diff; else loss += Math.abs(diff);
                 lastAlt = currAlt;
             }
         }
     }
-    
     return { gain: Math.round(gain), loss: Math.round(loss) };
 }
 
@@ -338,8 +315,7 @@ async function saveTrip(points, start, end, dist, elevation) {
         distance: dist,
         points: points,
         elevationGain: elevation.gain,
-        note: "" // Pourra être édité plus tard
+        note: ""
     };
-    
     await saveToDB('trips', trip);
 }

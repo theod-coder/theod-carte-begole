@@ -77,7 +77,6 @@ export function initMap() {
             let hue = (1 - Math.min(count, maxVal) / maxVal) * 120; 
             if (count > 50) hue = 0;
             
-            // Note: count est un nombre entier, donc safe ici pour innerHTML
             return L.divIcon({ 
                 html: `<div style="background-color: hsla(${hue}, 100%, 40%, 0.9); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid rgba(255,255,255,0.5); box-shadow: 0 4px 8px rgba(0,0,0,0.4); color: white; font-weight: bold; font-family: sans-serif; font-size: 14px;">${count}</div>`, 
                 className: 'marker-cluster-custom', 
@@ -142,12 +141,7 @@ export function refreshMap(points, filters = {}) {
         if (filters.year && filters.year !== 'all' && year !== filters.year) return;
         if (filters.month && filters.month !== 'all' && parseInt(month) !== parseInt(filters.month)) return;
 
-        // Création de l'icône
         const delay = Math.random() * 0.3;
-        // p.emoji est utilisé ici dans un contexte HTML mais c'est un caractère unique ou emoji
-        // Pour être puriste on pourrait créer l'élément DOM, mais L.divIcon attend du HTML string.
-        // Comme p.emoji est court et contrôlé (souvent via picker), le risque est minime ici,
-        // mais l'essentiel est la POPUP.
         const customHtml = `<div class="marker-bubble" style="animation-delay: ${delay}s">${p.emoji}</div>`;
         
         const marker = L.marker([p.lat, p.lng], { 
@@ -224,7 +218,6 @@ export function refreshMap(points, filters = {}) {
 
         popupDiv.appendChild(btnContainer);
 
-        // On passe l'élément DOM à Leaflet au lieu d'une chaîne
         marker.bindPopup(popupDiv);
         markersLayer.addLayer(marker);
     });
@@ -343,16 +336,65 @@ function fetchParcelAt(latlng) {
 
 // --- Heatmap & Borders ---
 
-export function toggleHeatmap(isActive, points) {
+/**
+ * Affiche une Heatmap basée sur la densité des TRAJETS
+ * @param {boolean} isActive 
+ * @param {Array} trips - Liste des trajets (et non plus des points)
+ */
+export function toggleHeatmap(isActive, trips) {
+    // Nettoyage préventif
+    if (heatLayer) {
+        map.removeLayer(heatLayer);
+        heatLayer = null;
+    }
+
     if (isActive) {
-        const heatPoints = points.map(p => [p.lat, p.lng, 0.5]); 
-        if (heatPoints.length === 0) {
-            showToast("Pas assez de points");
+        // 1. Extraction de TOUS les points de TOUS les trajets
+        let heatData = [];
+        
+        if (!trips || trips.length === 0) {
+            showToast("Aucun trajet enregistré pour la Heatmap");
+            // On décoche le bouton pour la cohérence UI
+            document.getElementById('heatmap-toggle').checked = false;
             return;
         }
-        if (heatLayer) map.removeLayer(heatLayer);
-        heatLayer = L.heatLayer(heatPoints, { radius: 25, blur: 15 }).addTo(map);
+
+        trips.forEach(trip => {
+            if (trip.points && trip.points.length > 0) {
+                trip.points.forEach(pt => {
+                    // On ajoute chaque point gps enregistré dans la heatmap
+                    // [lat, lng, intensité]
+                    // Une intensité faible (0.2) permet de voir la "chaleur" monter
+                    // seulement quand on repasse souvent au même endroit.
+                    heatData.push([pt[0], pt[1], 0.2]); 
+                });
+            }
+        });
+
+        if (heatData.length === 0) {
+            showToast("Données de trajets vides");
+            return;
+        }
+
+        // 2. Création de la couche Heatmap optimisée pour des lignes
+        heatLayer = L.heatLayer(heatData, { 
+            radius: 12,   // Rayon plus fin pour dessiner des "routes"
+            blur: 15,     // Flou pour l'effet chaleur
+            maxZoom: 16,  // Zoom où l'intensité est maximale
+            minOpacity: 0.05,
+            gradient: {
+                0.2: 'blue',
+                0.4: 'lime',
+                0.6: 'yellow',
+                0.8: 'orange',
+                1.0: 'red'
+            }
+        }).addTo(map);
+        
+        showToast(`Heatmap générée : ${trips.length} trajets 👣`);
+
     } else {
+        // Désactivation (déjà géré par le nettoyage au début)
         if (heatLayer) map.removeLayer(heatLayer);
     }
 }

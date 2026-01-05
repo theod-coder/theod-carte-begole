@@ -94,7 +94,8 @@ export function initEventListeners(map) {
 
     document.getElementById('cadastre-opacity-input').addEventListener('input', (e) => updateCadastreOpacity(e.target.value));
     
-    document.getElementById('heatmap-toggle').addEventListener('change', (e) => toggleHeatmap(e.target.checked, appState.points));
+    // MODIFICATION ICI : On passe appState.trips au lieu de appState.points
+    document.getElementById('heatmap-toggle').addEventListener('change', (e) => toggleHeatmap(e.target.checked, appState.trips));
     
     document.getElementById('radar-toggle').addEventListener('change', (e) => {
         if(e.target.checked) showToast("📡 Radar activé (40m)");
@@ -390,10 +391,6 @@ function openStatsModal() {
     const totalDist = appState.trips.reduce((acc, t) => acc + (t.distance || 0), 0);
     const totalElev = appState.trips.reduce((acc, t) => acc + (t.elevationGain || 0), 0);
 
-    // Ici les données sont numériques donc le risque est faible,
-    // mais on pourrait aussi passer en createElement pour la cohérence.
-    // Pour rester concis sur ce gros bloc HTML statique, on garde innerHTML
-    // car aucune donnée utilisateur texte n'est injectée.
     const html = `
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; padding:15px;">
             <div style="background:#f8f9fa; padding:15px; text-align:center; border-radius:12px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
@@ -474,7 +471,6 @@ function openCadastreStats() {
             const ha = (data.area / 10000).toFixed(3);
             const m2 = Math.round(data.area).toLocaleString();
             
-            // Note: color est un code hexadécimal généré par l'appli ou sélectionné, risque faible.
             html += `
                 <div style="display:flex; align-items:center; padding:15px; margin-bottom:10px; background:white; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,0.1); border-left: 5px solid ${color};">
                     <div style="flex:1;">
@@ -601,7 +597,6 @@ function openParcelModal(feature) {
     
     let area = props.contenance ? parseInt(props.contenance) : 0; 
     
-    // innerHTML est safe ici car area est un nombre
     document.getElementById('parcel-area').innerHTML = `${(area / 10000).toFixed(4)} ha<br><small>(${area} m²)</small>`;
     document.getElementById('parcel-note').value = "";
     
@@ -754,7 +749,6 @@ export function updateUserMarker(lat, lng, acc, h) {
     let flipStyle = "";
     if (h !== null && h !== undefined && h > 0 && h < 180) flipStyle = "transform: scaleX(-1);";
 
-    // Note: iconChar est issu d'une liste prédéfinie (avatars), donc safe.
     const customIcon = L.divIcon({
         className: 'custom-avatar-wrapper',
         html: `<div class="user-avatar-marker ${animClass}" style="${flipStyle}">${iconChar}</div>`,
@@ -837,7 +831,6 @@ function renderPointHistory(history) {
     [...history].reverse().forEach((e, revIndex) => {
         const realIndex = history.length - 1 - revIndex;
         
-        // --- Construction DOM Sécurisée ---
         const div = document.createElement('div');
         div.className = "history-item";
 
@@ -846,7 +839,6 @@ function renderPointHistory(history) {
         header.className = "history-header";
         
         const spanText = document.createElement('span');
-        // SÉCURISÉ : textContent neutralise les balises scripts
         spanText.textContent = `${e.date}: ${e.text || ""}`;
         
         const btnDel = document.createElement('button');
