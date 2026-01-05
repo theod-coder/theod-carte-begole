@@ -8,9 +8,9 @@ let currentEnvWeather = ""; // Stocke la dernière météo reçue
 // --- Chargement des pistes ---
 // Les chemins sont relatifs à la racine (index.html)
 const audioTracks = {
-    day: new Audio('../audios/sound_day.mp3'),
-    rain: new Audio('../audios/sound_rain.mp3'),
-    night: new Audio('../audios/sound_night.mp3')
+    day: new Audio('./audios/sound_day.mp3'),
+    rain: new Audio('./audios/sound_rain.mp3'),
+    night: new Audio('./audios/sound_night.mp3')
 };
 
 // Configuration initiale : boucle et volume à 0 pour les fondus
