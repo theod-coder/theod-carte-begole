@@ -813,7 +813,8 @@ function addHistoryToCurrentPoint() {
     const processEntry = async () => {
         let photoData = null;
         if (fileInput.files[0]) {
-            photoData = await compressImage(fileInput.files[0], 800, 0.7);
+            // Optimisation stockage : 600px max et qualité 0.6
+            photoData = await compressImage(fileInput.files[0], 600, 0.6);
         }
 
         const p = appState.points[currentEditingIndex];

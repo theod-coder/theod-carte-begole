@@ -11,36 +11,33 @@ export async function handlePlantUpload(inputElement) {
     const file = inputElement.files[0];
     if (!file) return;
 
-    // UI : Afficher le chargement
     document.getElementById('plantnet-upload-area').classList.add('hidden');
     document.getElementById('plantnet-loading').classList.remove('hidden');
     document.getElementById('plantnet-results').classList.add('hidden');
 
     try {
-        // 1. Compression de l'image (l'API est limitée en taille)
-        const compressedDataUrl = await compressImage(file, 1000, 0.8);
-        const blob = await (await fetch(compressedDataUrl)).blob();
+        // 1. Version HAUTE QUALITÉ pour l'API (Analyse IA)
+        // On garde 1000px et 0.8 pour que l'IA voit bien les détails
+        const apiImageData = await compressImage(file, 1000, 0.8);
+        const blob = await (await fetch(apiImageData)).blob();
 
-        // 2. Préparation du FormData
+        // 2. Version LÉGÈRE pour le Bégoledex (Stockage)
+        // On réduit drastiquement : 600px et 0.6 qualité (suffisant pour écran mobile)
+        const storageImageData = await compressImage(file, 600, 0.6);
+
+        // --- Envoi API ---
         const formData = new FormData();
         formData.append('images', blob);
-        
-        // Récupération de l'organe choisi (feuille, fleur...)
         const organ = document.getElementById('plant-organ').value || 'auto';
         formData.append('organs', organ);
 
-        // 3. Appel API
-        const response = await fetch(PLANTNET_API_URL, {
-            method: 'POST',
-            body: formData
-        });
-
+        const response = await fetch(PLANTNET_API_URL, { method: 'POST', body: formData });
         if (!response.ok) throw new Error("Erreur API PlantNet");
 
         const data = await response.json();
         
-        // On passe l'image compressée pour pouvoir la sauvegarder dans le Bégoledex
-        displayResults(data, compressedDataUrl);
+        // ⚠️ IMPORTANT : On passe l'image LÉGÈRE à l'affichage et au stockage
+        displayResults(data, storageImageData);
 
     } catch (error) {
         console.error(error);
@@ -65,7 +62,7 @@ function displayResults(data, originalImage) {
         const bestScore = Math.round(bestResult.score * 100);
 
         // --- LOGIQUE BÉGOLEDEX ---
-        // Si le meilleur résultat est fiable (> 25%), on tente de l'ajouter
+        // SEUIL MODIFIÉ À 25% (au lieu de 40%)
         if (bestScore > 25) {
             const plantData = {
                 name: bestResult.species.commonNames[0] || bestResult.species.scientificNameWithoutAuthor,
@@ -85,6 +82,7 @@ function displayResults(data, originalImage) {
             const image = res.images && res.images.length > 0 ? res.images[0].url.m : '';
 
             // On repère si c'est la plante qui vient d'être sauvegardée
+            // IL FAUT BIEN UTILISER LE MÊME SEUIL ICI (25)
             const isSaved = (res === bestResult && score > 25);
 
             const card = document.createElement('div');
