@@ -1,6 +1,6 @@
 import { PLANTNET_API_URL } from './config.js';
 import { compressImage, showToast } from './utils.js';
-// --- IMPORT NOUVEAU : Pour sauvegarder dans la collection ---
+// --- IMPORT : Pour sauvegarder dans la collection ---
 import { tryAddToBegoledex } from './begoledex.js';
 
 /**
@@ -11,6 +11,7 @@ export async function handlePlantUpload(inputElement) {
     const file = inputElement.files[0];
     if (!file) return;
 
+    // UI : Afficher le chargement
     document.getElementById('plantnet-upload-area').classList.add('hidden');
     document.getElementById('plantnet-loading').classList.remove('hidden');
     document.getElementById('plantnet-results').classList.add('hidden');
@@ -25,18 +26,25 @@ export async function handlePlantUpload(inputElement) {
         // On réduit drastiquement : 600px et 0.6 qualité (suffisant pour écran mobile)
         const storageImageData = await compressImage(file, 600, 0.6);
 
-        // --- Envoi API ---
+        // 3. Préparation du FormData
         const formData = new FormData();
         formData.append('images', blob);
+        
+        // Récupération de l'organe choisi (feuille, fleur...)
         const organ = document.getElementById('plant-organ').value || 'auto';
         formData.append('organs', organ);
 
-        const response = await fetch(PLANTNET_API_URL, { method: 'POST', body: formData });
+        // 4. Appel API
+        const response = await fetch(PLANTNET_API_URL, {
+            method: 'POST',
+            body: formData
+        });
+
         if (!response.ok) throw new Error("Erreur API PlantNet");
 
         const data = await response.json();
         
-        // ⚠️ IMPORTANT : On passe l'image LÉGÈRE à l'affichage et au stockage
+        // On passe l'image LÉGÈRE pour le stockage et l'affichage
         displayResults(data, storageImageData);
 
     } catch (error) {
@@ -62,12 +70,12 @@ function displayResults(data, originalImage) {
         const bestScore = Math.round(bestResult.score * 100);
 
         // --- LOGIQUE BÉGOLEDEX ---
-        // SEUIL MODIFIÉ À 25% (au lieu de 40%)
+        // Seuil à 25% (modifié selon ta demande)
         if (bestScore > 25) {
             const plantData = {
                 name: bestResult.species.commonNames[0] || bestResult.species.scientificNameWithoutAuthor,
                 sciName: bestResult.species.scientificNameWithoutAuthor,
-                image: originalImage, // On garde la photo de l'utilisateur !
+                image: originalImage, // On garde la photo légère !
                 score: bestScore
             };
             tryAddToBegoledex(plantData);
@@ -82,16 +90,14 @@ function displayResults(data, originalImage) {
             const image = res.images && res.images.length > 0 ? res.images[0].url.m : '';
 
             // On repère si c'est la plante qui vient d'être sauvegardée
-            // IL FAUT BIEN UTILISER LE MÊME SEUIL ICI (25)
             const isSaved = (res === bestResult && score > 25);
 
             const card = document.createElement('div');
             card.className = 'plant-result-card';
             
-            // Petit style spécial si c'est validé
+            // Petit style spécial si c'est validé (géré aussi par le CSS maintenant)
             if (isSaved) {
                 card.style.border = "2px solid #2ecc71";
-                card.style.background = "#f0fff4";
             }
 
             card.innerHTML = `
@@ -128,4 +134,8 @@ export function resetPlantNetUI() {
     document.getElementById('plantnet-loading').classList.add('hidden');
     document.getElementById('plantnet-results').classList.add('hidden');
     document.getElementById('plantnet-file-input').value = "";
+    
+    // --- AJOUT : Force le mode "Auto" par défaut ---
+    const organSelect = document.getElementById('plant-organ');
+    if (organSelect) organSelect.value = "auto";
 }

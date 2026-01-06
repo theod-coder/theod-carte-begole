@@ -249,9 +249,11 @@ input:checked + .slider:before { transform: translateX(21px); }
     background-color: #2ecc71; color: white; margin: 0; padding: 15px;
     font-size: 18px; text-align: center; flex-shrink: 0;
 }
-.modal-box > div.scrollable-content, #tripList, #stats-content, #achievements-content, .begoledex-grid {
+
+.modal-box > div.scrollable-content, #tripList, #stats-content, #achievements-content, .begoledex-grid, #pisteur-grid {
     padding: 15px; overflow-y: auto; flex-grow: 1; -webkit-overflow-scrolling: touch;
 }
+
 .modal-box label { font-size: 12px; font-weight: bold; color: var(--text-sub); margin-bottom: 5px; margin-top: 10px; display: block; padding-left: 5px; }
 .modal-box input, .modal-box textarea {
     width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px;
@@ -358,15 +360,6 @@ input:checked + .slider:before { transform: translateX(21px); }
 #replay-controls { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2000; animation: popIn 0.5s; }
 #btn-replay-stop { background-color: #c0392b; color: white; border: none; padding: 10px 25px; border-radius: 30px; font-weight: 800; font-size: 14px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 10px; animation: pulseRed 2s infinite; }
 .hiker-icon-marker { background: none; border: none; font-size: 30px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); transition: all 0.1s linear; z-index: 1000 !important; }
-
-.plant-result-card { background: white; border: 1px solid #eee; border-radius: 10px; padding: 10px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; gap: 10px; align-items: center; }
-.plant-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; }
-.plant-info { flex: 1; }
-.plant-name { font-weight: 800; color: #2c3e50; font-size: 14px; display: block; }
-.plant-sci { font-style: italic; color: #7f8c8d; font-size: 11px; }
-.score-container { height: 4px; background: #eee; border-radius: 2px; margin-top: 5px; width: 100%; overflow: hidden; }
-.score-bar { height: 100%; background: #27ae60; }
-@keyframes spin { 100% { transform: rotate(360deg); } }
 
 /* --- BÉGOLEDEX STYLES --- */
 .begoledex-grid {
@@ -496,3 +489,156 @@ body.deep-night-active .leaflet-popup-content-wrapper, body.deep-night-active .l
 /* TROPHÉE */
 .trophy-anim { width: 100%; height: 100%; font-size: 30px; display: flex; justify-content: center; align-items: center; filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8)); animation: trophy-bounce 2s infinite ease-in-out; cursor: pointer; }
 @keyframes trophy-bounce { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-8px) scale(1.1); filter: drop-shadow(0 0 15px gold); } }
+
+/* =========================================
+   10. STYLE AMÉLIORÉ : IDENTIFICATION PLANTE (Compatible Thèmes)
+   ========================================= */
+
+/* Zone d'upload / Appareil photo */
+#plantnet-upload-area {
+    background-color: var(--input-bg); /* S'adapte au thème */
+    border: 2px dashed var(--border-color);
+    border-radius: 20px;
+    transition: all 0.3s ease;
+    margin-bottom: 10px;
+    color: var(--text-sub);
+}
+
+#plantnet-upload-area:hover {
+    border-color: #27ae60;
+    background-color: rgba(39, 174, 96, 0.05); /* Vert très léger transparent */
+}
+
+#plantnet-upload-area .btn-load {
+    background: linear-gradient(135deg, #27ae60, #2ecc71) !important;
+    color: white !important; /* Toujours blanc pour le contraste bouton */
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-radius: 50px;
+    box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-top: 15px;
+    cursor: pointer;
+    border: none;
+    display: block; /* S'assure que le bouton est bien en bloc */
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+#plantnet-upload-area .btn-load:active {
+    transform: scale(0.96);
+    box-shadow: 0 2px 5px rgba(39, 174, 96, 0.4);
+}
+
+/* Menu déroulant Organe */
+#plant-organ {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background-color: var(--card-bg);
+    color: var(--text-main);
+    font-size: 14px;
+    font-weight: 600;
+    outline: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Cartes de résultats */
+.plant-result-card {
+    background: var(--card-bg); /* Fond carte adapté */
+    border: 1px solid var(--border-color) !important;
+    border-radius: 16px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 6px var(--shadow-color);
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    transition: transform 0.2s ease, border-color 0.3s;
+    animation: slideInUp 0.4s ease-out;
+}
+
+/* Plante validée (>25%) */
+.plant-result-card[style*="border"] {
+    border: 2px solid #2ecc71 !important;
+    /* Un fond vert très léger qui marche aussi en sombre (via transparence) */
+    background: linear-gradient(to right, var(--card-bg), rgba(46, 204, 113, 0.15));
+}
+
+@keyframes slideInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.plant-thumb {
+    width: 70px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: 12px;
+    box-shadow: 0 2px 5px var(--shadow-color);
+    background-color: #eee; /* Fond gris en attendant l'image */
+}
+
+.plant-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.plant-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text-main); /* Texte principal adapté */
+    margin-bottom: 2px;
+}
+
+.plant-sci {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--text-sub); /* Texte secondaire adapté */
+    margin-bottom: 6px;
+}
+
+/* Barres de score */
+.score-container {
+    height: 6px;
+    background: rgba(127, 140, 141, 0.2); /* Gris transparent compatible tout thème */
+    border-radius: 10px;
+    width: 100%;
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.score-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #2ecc71, #00b894);
+    border-radius: 10px;
+    transition: width 1s ease-out;
+}
+
+.plant-info small {
+    font-size: 10px;
+    color: var(--text-sub);
+    opacity: 0.8;
+    margin-top: 3px;
+    display: block;
+    text-align: right;
+}
+
+/* Animation de chargement */
+#plantnet-loading {
+    color: #27ae60;
+    font-weight: bold;
+}
+#plantnet-loading p {
+    color: var(--text-sub); /* Texte "Analyse..." adapté */
+}
+#plantnet-loading div {
+    font-size: 40px;
+    margin-bottom: 15px;
+    filter: drop-shadow(0 4px 6px rgba(39, 174, 96, 0.3));
+}
