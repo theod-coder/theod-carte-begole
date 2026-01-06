@@ -3,7 +3,7 @@ import { initDB, loadAllFromDB, checkStorageUsage } from './db.js';
 import { initMap, setVillageData, refreshMap, displayParcels } from './map.js';
 import { initEventListeners } from './ui.js';
 // Nouveaux imports suite à la refactorisation
-import { setPoints, setTrips, setParcels } from './state.js';
+import { setPoints, setTrips, setParcels, setBegoledex } from './state.js'; // <-- AJOUTÉ
 import { updateAstroWidget, updateWeatherWidget } from './modules/weather.js';
 
 import { initAudio } from './audio.js';
@@ -21,13 +21,15 @@ async function startApp() {
         await initDB();
 
         // 2. Chargement des données locales
-        const [points, parcels, trips] = await Promise.all([
+        // On charge aussi le 'begoledex' maintenant
+        const [points, parcels, trips, begoledex] = await Promise.all([
             loadAllFromDB('points'),
             loadAllFromDB('parcels'),
-            loadAllFromDB('trips')
+            loadAllFromDB('trips'),
+            loadAllFromDB('begoledex')
         ]);
 
-        console.log(`📊 Données : ${points.length} pts, ${parcels.length} parcelles.`);
+        console.log(`📊 Données : ${points.length} pts, ${parcels.length} parcelles, ${trips.length} trajets, ${begoledex.length} plantes.`);
 
         // Nettoyage doublons
         await cleanDuplicates(points);
@@ -37,6 +39,7 @@ async function startApp() {
         setPoints(points);
         setTrips(trips);
         setParcels(parcels);
+        setBegoledex(begoledex); // <-- Stockage en mémoire vive
 
         // 3. Initialisation de la Carte
         const map = initMap();

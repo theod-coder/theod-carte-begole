@@ -9,7 +9,10 @@ import { toggleTracking } from './tracking.js';
 import { toggleSoundscape, updateAudioWeather } from './audio.js';
 import { showAchievements } from './gamification.js';
 import { handlePlantUpload, resetPlantNetUI } from './plantnet.js';
-import { openPisteurModal } from './pisteur.js'; 
+import { openPisteurModal } from './pisteur.js';
+// --- IMPORT NOUVEAU ---
+import { openBegoledexModal } from './begoledex.js';
+
 import { showToast, triggerHaptic, pad, compressImage, getSpeedColor } from './utils.js';
 import { VILLAGE_COORDS, SECRET_EMOJIS } from './config.js';
 import { appState, setPoints } from './state.js';
@@ -71,7 +74,7 @@ export function initEventListeners(map) {
 
     document.getElementById('btn-fullscreen').addEventListener('click', toggleFullScreen);
     
-    // --- Outils Grid ---
+    // --- Outils Grid & Immersion ---
     document.getElementById('btn-plantnet').addEventListener('click', openPlantNetModal);
     document.getElementById('plantnet-file-input').addEventListener('change', (e) => handlePlantUpload(e.target));
     document.getElementById('btn-plantnet-close').addEventListener('click', () => document.getElementById('modal-plantnet').classList.add('hidden'));
@@ -80,6 +83,20 @@ export function initEventListeners(map) {
     document.getElementById('btn-pisteur-close').addEventListener('click', () => document.getElementById('modal-pisteur').classList.add('hidden'));
 
     document.getElementById('btn-sound').addEventListener('click', toggleSoundscape);
+    
+    // --- NOUVEAU : Listener Bégoledex (Version Sécurisée) ---
+    const btnBegoledex = document.getElementById('btn-begoledex');
+    if (btnBegoledex) {
+        btnBegoledex.addEventListener('click', openBegoledexModal);
+    }
+
+    const btnCloseBegoledex = document.getElementById('btn-begoledex-close');
+    if (btnCloseBegoledex) {
+        btnCloseBegoledex.addEventListener('click', () => {
+            const modal = document.getElementById('modal-begoledex');
+            if (modal) modal.classList.add('hidden');
+        });
+    }
     
     // --- Toggles Carte ---
     document.getElementById('cadastre-mode-toggle').addEventListener('change', (e) => {
@@ -94,7 +111,6 @@ export function initEventListeners(map) {
 
     document.getElementById('cadastre-opacity-input').addEventListener('input', (e) => updateCadastreOpacity(e.target.value));
     
-    // MODIFICATION ICI : On passe appState.trips au lieu de appState.points
     document.getElementById('heatmap-toggle').addEventListener('change', (e) => toggleHeatmap(e.target.checked, appState.trips));
     
     document.getElementById('radar-toggle').addEventListener('change', (e) => {
@@ -163,7 +179,7 @@ export function initEventListeners(map) {
     document.getElementById('import-file').addEventListener('change', importData);
     document.getElementById('btn-reset-data').addEventListener('click', async () => {
         if(confirm("⚠️ Tout effacer ? Action irréversible.")) {
-            await clearStoreDB('points'); await clearStoreDB('parcels'); await clearStoreDB('trips');
+            await clearStoreDB('points'); await clearStoreDB('parcels'); await clearStoreDB('trips'); await clearStoreDB('begoledex');
             location.reload();
         }
     });
@@ -888,7 +904,7 @@ function renderPointHistory(history) {
 // --- SYSTÈME ---
 
 function exportData() {
-    const d = { points: appState.points, trips: appState.trips, parcels: appState.parcels };
+    const d = { points: appState.points, trips: appState.trips, parcels: appState.parcels, begoledex: appState.begoledex };
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(d)], {type:'application/json'}));
     a.download = 'Begole_Backup.json';
@@ -904,6 +920,11 @@ function importData(e) {
                 for (let p of d.points) {
                     if (!p.id) p.id = Date.now() + Math.random();
                     await saveToDB('points', p);
+                }
+            }
+            if (d.begoledex) { // Import du Bégoledex aussi
+                for (let b of d.begoledex) {
+                     await saveToDB('begoledex', b);
                 }
             }
             showToast("Données importées ! Rechargez la page.");
@@ -963,6 +984,43 @@ export function triggerWeatherEffect(desc) {
             p.style.left = Math.random() * 100 + 'vw';
             p.style.animationDuration = (Math.random() + 0.5) + 's';
             container.appendChild(p);
+        }
+    }
+}
+
+// --- NOUVEAU : GESTION DES PARTICULES DE VENT (FEUILLES) ---
+export function updateWindVisuals(isActive) {
+    const container = document.getElementById('weather-overlay');
+    
+    // Si on active le vent, on ajoute des feuilles sans supprimer la pluie existante
+    if (isActive) {
+        // On vérifie s'il y a déjà des feuilles pour ne pas spammer
+        if (container.querySelector('.leaf')) return;
+
+        for (let i = 0; i < 15; i++) {
+            const l = document.createElement('div');
+            l.className = 'leaf';
+            
+            // Randomisation du départ (hauteur et délai)
+            l.style.top = (Math.random() * 80 + 10) + 'vh';
+            l.style.animationDuration = (2 + Math.random() * 3) + 's'; // Vitesse rapide
+            l.style.animationDelay = Math.random() * 5 + 's';
+            
+            // Trajectoire légèrement courbe via CSS var
+            l.style.setProperty('--targetY', (Math.random() * 20 - 10) + 'vh');
+            
+            container.appendChild(l);
+        }
+        document.body.classList.add('weather-active');
+        // On ne retire pas la classe weather-active car elle sert au conteneur global
+    } else {
+        // Si le vent tombe, on retire seulement les feuilles
+        const leaves = container.querySelectorAll('.leaf');
+        leaves.forEach(l => l.remove());
+        
+        // Si plus rien (ni pluie ni feuille), on cache le calque
+        if (container.children.length === 0) {
+            document.body.classList.remove('weather-active');
         }
     }
 }

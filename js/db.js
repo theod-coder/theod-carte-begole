@@ -1,6 +1,7 @@
 import { DB_NAME } from './config.js';
 
-const DB_VERSION = 1;
+// ⚠️ IMPORTANT : On passe la version à 2 pour déclencher la création de la nouvelle table
+const DB_VERSION = 2;
 let db = null;
 
 /**
@@ -13,6 +14,7 @@ export function initDB() {
 
         request.onupgradeneeded = (event) => {
             db = event.target.result;
+            
             // Création des tables si elles n'existent pas
             if (!db.objectStoreNames.contains('points')) {
                 db.createObjectStore('points', { keyPath: 'id' });
@@ -23,11 +25,17 @@ export function initDB() {
             if (!db.objectStoreNames.contains('trips')) {
                 db.createObjectStore('trips', { keyPath: 'id' });
             }
+
+            // --- NOUVEAU : Table Bégoledex ---
+            if (!db.objectStoreNames.contains('begoledex')) {
+                db.createObjectStore('begoledex', { keyPath: 'id' });
+                console.log("📂 Table 'begoledex' créée !");
+            }
         };
 
         request.onsuccess = (event) => {
             db = event.target.result;
-            console.log(`✅ DB "${DB_NAME}" ouverte avec succès.`);
+            console.log(`✅ DB "${DB_NAME}" v${DB_VERSION} ouverte avec succès.`);
             resolve(db);
         };
 
@@ -40,7 +48,7 @@ export function initDB() {
 
 /**
  * Sauvegarde ou met à jour un objet dans un store donné
- * @param {string} storeName - 'points', 'parcels', ou 'trips'
+ * @param {string} storeName - 'points', 'parcels', 'trips' ou 'begoledex'
  * @param {object} data - L'objet à stocker (doit avoir un champ 'id')
  */
 export function saveToDB(storeName, data) {

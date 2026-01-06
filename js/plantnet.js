@@ -1,5 +1,7 @@
 import { PLANTNET_API_URL } from './config.js';
 import { compressImage, showToast } from './utils.js';
+// --- IMPORT NOUVEAU : Pour sauvegarder dans la collection ---
+import { tryAddToBegoledex } from './begoledex.js';
 
 /**
  * Gère l'upload et l'identification
@@ -36,7 +38,9 @@ export async function handlePlantUpload(inputElement) {
         if (!response.ok) throw new Error("Erreur API PlantNet");
 
         const data = await response.json();
-        displayResults(data);
+        
+        // On passe l'image compressée pour pouvoir la sauvegarder dans le Bégoledex
+        displayResults(data, compressedDataUrl);
 
     } catch (error) {
         console.error(error);
@@ -46,28 +50,58 @@ export async function handlePlantUpload(inputElement) {
 }
 
 /**
- * Affiche les résultats dans la modale
+ * Affiche les résultats dans la modale et gère l'ajout au Bégoledex
+ * @param {Object} data - Réponse de l'API
+ * @param {string} originalImage - L'image prise par l'utilisateur (Base64)
  */
-function displayResults(data) {
+function displayResults(data, originalImage) {
     const container = document.getElementById('plantnet-results');
     container.innerHTML = "";
     
     if (!data.results || data.results.length === 0) {
         container.innerHTML = "<p>Aucune plante reconnue...</p>";
     } else {
-        // On prend les 3 meilleurs résultats
+        const bestResult = data.results[0];
+        const bestScore = Math.round(bestResult.score * 100);
+
+        // --- LOGIQUE BÉGOLEDEX ---
+        // Si le meilleur résultat est fiable (> 25%), on tente de l'ajouter
+        if (bestScore > 25) {
+            const plantData = {
+                name: bestResult.species.commonNames[0] || bestResult.species.scientificNameWithoutAuthor,
+                sciName: bestResult.species.scientificNameWithoutAuthor,
+                image: originalImage, // On garde la photo de l'utilisateur !
+                score: bestScore
+            };
+            tryAddToBegoledex(plantData);
+        }
+        // -------------------------
+
+        // Affichage des 3 meilleurs résultats
         data.results.slice(0, 3).forEach(res => {
             const score = Math.round(res.score * 100);
             const name = res.species.scientificNameWithoutAuthor;
             const common = res.species.commonNames[0] || name;
             const image = res.images && res.images.length > 0 ? res.images[0].url.m : '';
 
+            // On repère si c'est la plante qui vient d'être sauvegardée
+            const isSaved = (res === bestResult && score > 25);
+
             const card = document.createElement('div');
             card.className = 'plant-result-card';
+            
+            // Petit style spécial si c'est validé
+            if (isSaved) {
+                card.style.border = "2px solid #2ecc71";
+                card.style.background = "#f0fff4";
+            }
+
             card.innerHTML = `
-                <img src="${image}" class="plant-thumb">
+                <img src="${image}" class="plant-thumb" alt="${common}">
                 <div class="plant-info">
-                    <span class="plant-name">${common}</span><br>
+                    <span class="plant-name">
+                        ${common} ${isSaved ? '✅' : ''}
+                    </span><br>
                     <span class="plant-sci">${name}</span>
                     <div class="score-container">
                         <div class="score-bar" style="width:${score}%"></div>

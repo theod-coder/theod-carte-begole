@@ -24,6 +24,7 @@
     <div id="firefly-overlay"></div>
     <div id="cloud-overlay"></div>
     <div id="pollen-overlay"></div>
+    
     <div id="map"></div>
 
     <button id="btn-compass">🧭</button>
@@ -61,14 +62,18 @@
         <div id="menu-items" class="hidden-mobile">
             
             <div style="display:flex; gap:5px; margin-bottom:5px;">
-                <div class="astro-widget" style="flex:1; margin:0;">
-                    <span id="astro-sun">☀️ --h--</span>
-                    <span id="astro-moon">🌑 --%</span>
+                <div class="astro-widget" style="flex:1; margin:0; flex-direction: column; justify-content: center; gap: 2px;">
+                    <span id="astro-sun" style="font-size:11px;">☀️ --h--</span>
+                    <span id="astro-moon" style="font-size:11px;">🌑 --%</span>
                 </div>
-                <div class="weather-widget" id="weather-widget-btn" style="flex:1; margin:0;">
-                    <div class="env-row" style="margin:0;">
-                        <div id="weather-desc" style="font-size:12px;">--</div>
-                        <div id="weather-temp">--°C</div>
+                
+                <div class="weather-widget" id="weather-widget-btn" style="flex:1; margin:0; flex-direction: column; justify-content: center; padding: 5px;">
+                    <div class="env-row" style="margin:0; width: 100%; justify-content: space-around;">
+                        <div id="weather-desc" style="font-size:11px;">--</div>
+                        <div id="weather-temp" style="font-size:12px;">--°C</div>
+                    </div>
+                    <div id="weather-wind" style="font-size:10px; width: 100%; text-align:center; border-top:1px solid rgba(255,255,255,0.3); margin-top:3px; padding-top:2px;">
+                        💨 -- km/h
                     </div>
                 </div>
             </div>
@@ -174,6 +179,10 @@
                     <label class="switch"><input type="checkbox" id="clouds-toggle"><span class="slider round"></span></label>
                 </div>
             </div>
+            
+            <button id="btn-begoledex" style="width:100%; margin-bottom:15px; background: linear-gradient(135deg, #27ae60, #16a085); color:white; border:none; padding:12px; border-radius:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                📒 Ouvrir le Bégoledex 🌸
+            </button>
 
             <div class="menu-section-title">💾 Système & Données</div>
             
@@ -199,7 +208,7 @@
             <button id="btn-reset-data" class="btn-danger" style="margin-top:10px; font-size:10px; padding:5px;">⚠️ Reset Total</button>
             
             <div style="text-align:center; margin-top:15px; font-size:9px; color:#aaa;">
-                Bégole Map v4.0 (Organized)
+                Bégole Map v4.4
             </div>
         </div>
     </div>
@@ -383,6 +392,17 @@
             <h3 style="background:#795548;">Guide du Pisteur</h3>
             <div id="pisteur-grid" class="achievements-grid" style="padding:10px;"></div>
             <button id="btn-pisteur-close" class="btn-cancel" style="margin:10px;">Fermer</button>
+        </div>
+    </div>
+
+    <div id="modal-begoledex" class="hidden">
+        <div class="modal-box" style="max-height: 85vh;">
+            <h3 style="background: linear-gradient(135deg, #27ae60, #16a085);">
+                Bégoledex 📒
+                <div id="begoledex-count" style="font-size:11px; opacity:0.8; font-weight:normal;">0 plantes</div>
+            </h3>
+            <div id="begoledex-grid" class="begoledex-grid"></div>
+            <button id="btn-begoledex-close" class="btn-cancel" style="margin:10px;">Fermer</button>
         </div>
     </div>
 

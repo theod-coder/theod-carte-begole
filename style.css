@@ -1,20 +1,33 @@
 /* =========================================
-   1. VARIABLES & THÈMES (JOUR / CRÉPUSCULE / NUIT)
+   1. VARIABLES & THÈMES (JOUR / CRÉPUSCULE / NUIT / AUBE)
    ========================================= */
 :root {
     /* --- THÈME JOUR (Défaut) --- */
-    --main-bg: #f0f0f0;           /* Fond général */
-    --text-main: #333333;         /* Texte principal (Noir) */
-    --text-sub: #666666;          /* Sous-titres (Gris) */
-    --panel-bg: rgba(255, 255, 255, 0.90); /* Fond menu/dashboard */
-    --card-bg: #ffffff;           /* Fond des cartes/items */
-    --border-color: #eeeeee;      /* Bordures */
+    --main-bg: #f0f0f0;           
+    --text-main: #333333;         
+    --text-sub: #666666;          
+    --panel-bg: rgba(255, 255, 255, 0.90); 
+    --card-bg: #ffffff;           
+    --border-color: #eeeeee;      
     --shadow-color: rgba(0,0,0,0.1);
     --input-bg: #ffffff;
     --modal-bg: #f4f6f8;
 }
 
-/* --- THÈME CRÉPUSCULE (Golden Hour) --- */
+/* --- THÈME AUBE (Matin frais - Rose/Bleu) --- */
+body.theme-dawn {
+    --main-bg: #e3f2fd; /* Bleu très pâle */
+    --text-main: #2c3e50;
+    --text-sub: #546e7a;
+    --panel-bg: rgba(255, 235, 238, 0.95); /* Rosé */
+    --card-bg: #ffffff;
+    --border-color: #ffcdd2; /* Bordure rosée */
+    --shadow-color: rgba(100, 100, 200, 0.15);
+    --input-bg: #fffbfb;
+    --modal-bg: #fff8e1;
+}
+
+/* --- THÈME CRÉPUSCULE (Golden Hour - Orange/Doré) --- */
 body.theme-golden {
     --main-bg: #f5e6ca;
     --text-main: #4e342e;
@@ -29,11 +42,11 @@ body.theme-golden {
 
 /* --- THÈME NUIT (Dark Mode) --- */
 body.theme-dark {
-    --main-bg: #1a252f;           /* Fond sombre */
-    --text-main: #ecf0f1;         /* Texte BLANC */
-    --text-sub: #bdc3c7;          /* Texte gris clair */
-    --panel-bg: rgba(44, 62, 80, 0.95); /* Fond menu sombre */
-    --card-bg: #34495e;           /* Fond cartes sombre */
+    --main-bg: #1a252f;           
+    --text-main: #ecf0f1;         
+    --text-sub: #bdc3c7;          
+    --panel-bg: rgba(44, 62, 80, 0.95); 
+    --card-bg: #34495e;           
     --border-color: #465c71;
     --shadow-color: rgba(0,0,0,0.5);
     --input-bg: #2c3e50;
@@ -49,7 +62,7 @@ body {
     overflow: hidden; 
     background-color: var(--main-bg); 
     color: var(--text-main);          
-    transition: background-color 0.5s ease, color 0.5s ease;
+    transition: background-color 1.5s ease, color 0.5s ease; /* Transition lente pour l'ambiance */
     -webkit-tap-highlight-color: transparent;
 }
 
@@ -58,12 +71,11 @@ body {
 /* =========================================
    3. WIDGETS & BOUTONS FLOTTANTS
    ========================================= */
-/* Widgets Menu (Toujours fond coloré, texte blanc forcé) */
 .astro-widget, .weather-widget {
     display: flex; justify-content: space-around; align-items: center;
     padding: 10px; border-radius: 12px;
     font-weight: 700; font-size: 14px; margin-bottom: 8px; 
-    color: white !important; /* Force le blanc même en thème jour */
+    color: white !important; 
     box-shadow: 0 4px 10px var(--shadow-color);
     border: 1px solid rgba(255,255,255,0.1);
 }
@@ -74,7 +86,6 @@ body {
 .sun-alert { color: #e74c3c !important; animation: blinkRed 2s infinite; }
 @keyframes blinkRed { 50% { opacity: 0.6; } }
 
-/* Boutons Flottants */
 #btn-compass, #btn-recenter {
     color: white !important; 
     box-shadow: 0 4px 15px var(--shadow-color);
@@ -121,7 +132,7 @@ body {
 .toast.show { opacity: 1; transform: translateY(0); }
 
 /* =========================================
-   4. MENU DÉROULANT (STYLE RÉORGANISÉ)
+   4. MENU DÉROULANT
    ========================================= */
 #menu-container { position: absolute; top: 15px; right: 15px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
 #menu-toggle {
@@ -143,58 +154,30 @@ body {
 
 #menu-items hr { border: 0; height: 1px; background: var(--border-color); margin: 5px 0; width: 100%; }
 
-/* --- TITRES DE SECTIONS --- */
 .menu-section-title {
     font-size: 11px; text-transform: uppercase; color: #95a5a6; font-weight: 800;
     letter-spacing: 1px; margin: 10px 0 5px 0; border-bottom: 1px solid var(--border-color);
     padding-bottom: 3px;
 }
 
-/* --- GRILLE D'OUTILS (NOUVEAU) --- */
-.tools-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr; /* 2 colonnes strictes */
-    gap: 10px; /* Espace net entre les blocs */
-    margin-bottom: 10px;
-}
-
+.tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
 .btn-grid {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 10px 5px;
-    border-radius: 15px;
-    color: white !important;
-    font-weight: bold;
-    border: none;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-    transition: transform 0.1s;
-    
-    /* --- CORRECTIONS --- */
-    height: 100px;        /* Hauteur fixe */
-    width: 100%;          /* Largeur 100% de la colonne */
-    box-sizing: border-box; /* OBLIGATOIRE : Inclut le padding dans les 100px */
-    line-height: 1.3;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    padding: 10px 5px; border-radius: 15px; color: white !important; font-weight: bold; border: none;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: transform 0.1s; height: 100px; width: 100%; box-sizing: border-box; line-height: 1.3;
 }
 .btn-grid:active { transform: scale(0.96); }
-
 .grid-icon { font-size: 28px; margin-bottom: 8px; display: block; }
 .grid-text { font-size: 12px; display: block; }
-.label-grid { cursor: pointer; margin: 0 !important; }
 
-/* --- MÉTÉO & ASTRO EN LIGNE --- */
 .env-row { display: flex; gap: 10px; margin-bottom: 5px; }
 .env-row > div { flex: 1; margin-bottom: 0; justify-content: center; flex-direction: column; }
 
-/* --- INTERRUPTEURS COMPACTS --- */
 .toggles-container { background: rgba(0,0,0,0.03); border-radius: 10px; padding: 10px; }
 .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
 .toggle-row span { font-size: 13px; color: var(--text-main); font-weight: 600; }
 .toggle-row:last-child { margin-bottom: 0; }
 
-/* Inputs */
 #filter-input, #text-filter-input, .year-select { 
     border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; font-size: 14px; 
     background: var(--input-bg); color: var(--text-main);
@@ -203,7 +186,6 @@ body {
 .year-select { width: 100%; margin-bottom: 10px; }
 .filter-row { display: flex; gap: 5px; }
 
-/* Boutons Standards (Lignes) */
 #menu-items button:not(.btn-grid) {
     width: 100%; text-align: left; padding: 12px 15px; border: none; border-radius: 12px;
     font-size: 14px; font-weight: 600; cursor: pointer; color: white !important;
@@ -226,13 +208,11 @@ body {
 .btn-history { background-color: #8e44ad; }
 @keyframes pulseRed { 0% {box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(192, 57, 43, 0);} 100% {box-shadow: 0 0 0 0 rgba(192, 57, 43, 0);} }
 
-/* Jauge Stockage */
 .storage-container { margin-bottom: 10px; padding: 0 5px; }
 .storage-header { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-sub); margin-bottom: 3px; font-weight: bold; }
 .storage-track { width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
 .storage-fill { height: 100%; background: #2ecc71; transition: width 0.5s ease-out; border-radius: 3px; }
 
-/* Styles Cadastre Switch */
 .switch { position: relative; display: inline-block; width: 45px; height: 24px; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
@@ -247,7 +227,7 @@ input:checked + .slider:before { transform: translateX(21px); }
 .color-dot { width: 16px; height: 16px; border-radius: 4px; display: inline-block; margin-right: 8px; border: 1px solid rgba(0,0,0,0.1); }
 
 /* =========================================
-   5. MODALES (MISE À JOUR AVEC #MODAL-METAL)
+   5. MODALES
    ========================================= */
 #modal-overlay, #stats-overlay, #history-overlay, #modal-parcel, #modal-edit-point, #modal-edit-trip, #modal-cadastre-stats, #modal-elevation, #modal-achievements, #modal-begoledex, #modal-plantnet, #modal-pisteur, #modal-metal {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); z-index: 2000; 
@@ -286,7 +266,7 @@ input:checked + .slider:before { transform: translateX(21px); }
 .btn-confirm { background-color: #2ecc71; color: white; }
 
 /* =========================================
-   6. LISTES & SUCCÈS
+   6. ÉLÉMENTS LISTES, SUCCÈS, MARKERS
    ========================================= */
 .achievements-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .badge-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 15px 10px; text-align: center; opacity: 0.5; filter: grayscale(1); transition: all 0.3s; }
@@ -301,22 +281,12 @@ input:checked + .slider:before { transform: translateX(21px); }
 .btn-graph-trip { background: #34495e; color: white; border: none; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-right: 5px; box-shadow: 0 2px 5px var(--shadow-color); }
 .btn-delete-trip { background: #ff7675; color: white; border: none; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-right: 5px; }
 
-.stats-summary { display: flex; justify-content: space-between; gap: 5px; margin-bottom: 15px; }
-.stat-card { background: var(--card-bg); flex: 1; padding: 8px 2px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px var(--shadow-color); border: 1px solid var(--border-color); }
-.stat-value { display: block; font-size: 15px; font-weight: 800; color: var(--text-main); }
-.stat-label { font-size: 9px; color: var(--text-sub); text-transform: uppercase; font-weight: 700; display: block; margin-top: 2px; }
-.stat-row { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 10px 15px; margin-bottom: 8px; border-radius: 12px; border: 1px solid var(--border-color); }
-.stat-emoji { font-size: 20px; width: 32px; height: 32px; background: rgba(0,0,0,0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; }
-.stat-count { font-weight: 800; color: var(--text-main); font-size: 15px; }
-
 /* CARNET DE BORD */
 .history-list { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; margin: 5px 15px; height: 120px; overflow-y: auto; padding: 10px; }
 .history-item { font-size: 13px; color: var(--text-sub); padding: 5px 0; border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: flex-start !important; }
 .history-header { display: flex; justify-content: space-between; width: 100%; align-items: center; }
 .history-item span { font-weight: 700; color: var(--text-main); margin-right: 5px; }
 .btn-history-delete-row { background: transparent; border: none; font-size: 14px; cursor: pointer; padding: 0 5px; opacity: 0.6; color: var(--text-main); }
-
-/* PHOTOS */
 .history-add-container { padding: 0 15px; margin-top: 5px; }
 .btn-photo-label { background: #bdc3c7; color: #fff; padding: 6px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
 .btn-add-history { background: #3498db; color: white; border: none; padding: 6px 15px; border-radius: 15px; font-weight: bold; cursor: pointer; }
@@ -324,39 +294,20 @@ input:checked + .slider:before { transform: translateX(21px); }
 #lightbox-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 5000; display: flex; justify-content: center; align-items: center; cursor: zoom-out; }
 #lightbox-img { max-width: 95vw; max-height: 90vh; object-fit: contain; border-radius: 5px; }
 
-/* MISC */
 #pocket-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #000000; z-index: 3000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #444; user-select: none; }
 .pocket-btn { border: 2px solid #333; color: #666; background: black; padding: 20px 40px; border-radius: 50px; font-size: 18px; margin-top: 30px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
 .hidden-poche { display: none !important; }
-/* --- MODIFICATION : LE CONTENEUR LEAFLET DEVIENT INVISIBLE --- */
-.emoji-icon { 
-    background: transparent !important; 
-    border: none !important; 
-    box-shadow: none !important; 
-}
 
-/* --- NOUVEAU : LA BULLE QUI POP --- */
+.emoji-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
 .marker-bubble {
     display: flex; justify-content: center; align-items: center;
     background-color: rgba(255, 255, 255, 0.95);
-    border: 1px solid #999;
-    border-radius: 50%;
-    width: 100%; height: 100%;
-    font-size: 22px;
-    box-shadow: 0 3px 6px rgba(0,0,0,0.3);
-    
-    /* L'animation */
-    transform: scale(0); /* Départ invisible */
-    animation: pop-bounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    border: 1px solid #999; border-radius: 50%; width: 100%; height: 100%;
+    font-size: 22px; box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+    transform: scale(0); animation: pop-bounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
+@keyframes pop-bounce { 0% { transform: scale(0) translateY(-30px); opacity: 0; } 50% { opacity: 1; } 70% { transform: scale(1.2) translateY(0); } 100% { transform: scale(1) translateY(0); opacity: 1; } }
 
-/* Keyframes pour le rebond élastique */
-@keyframes pop-bounce {
-    0% { transform: scale(0) translateY(-30px); opacity: 0; }
-    50% { opacity: 1; }
-    70% { transform: scale(1.2) translateY(0); }
-    100% { transform: scale(1) translateY(0); opacity: 1; }
-}
 .user-location-arrow { width: 36px; height: 36px; background-color: #3498db; color: white; border: 2px solid white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 20px; box-shadow: 0 3px 6px rgba(0,0,0,0.3); transition: transform 0.5s ease-out; }
 .user-location-arrow::after { content: '⬆️'; position: relative; top: -1px; }
 .leaflet-div-icon { background: transparent; border: none; }
@@ -365,25 +316,49 @@ input:checked + .slider:before { transform: translateX(21px); }
 .btn-popup-edit { display: block; width: 100%; background-color: #34495e; color: white; border: none; padding: 8px; border-radius: 20px; font-size: 12px; font-weight: bold; cursor: pointer; margin-top: 5px; }
 
 /* =========================================
-   12. EFFETS MÉTÉO (5 secondes)
+   7. EFFETS MÉTÉO & AMBIANCE
    ========================================= */
 #weather-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 500; overflow: hidden; display: none; opacity: 1; transition: opacity 1s ease-out; }
 .weather-active #weather-overlay { display: block; }
 .weather-fading #weather-overlay { opacity: 0; }
+
 .rain { background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.6)); width: 2px; height: 80px; position: absolute; bottom: 100%; animation: fall linear infinite; }
 @keyframes fall { to { transform: translateY(120vh); } }
+
 .snow { background: white; border-radius: 50%; position: absolute; top: -10px; opacity: 0.8; animation: fall-snow linear infinite; }
 @keyframes fall-snow { 0% { transform: translateY(-10vh) translateX(0); } 100% { transform: translateY(110vh) translateX(20px); } }
 
-/* =========================================
-   13. REPLAY RANDO
-   ========================================= */
-#replay-controls { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); z-index: 2000; animation: popIn 0.5s; }
-.hiker-icon-marker { background: none; border: none; font-size: 30px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); transition: all 0.1s linear; z-index: 1000 !important; }
+/* --- NOUVEAU : EFFET VENT (FEUILLES) --- */
+.leaf {
+    position: absolute;
+    width: 8px; height: 8px;
+    background-color: #27ae60;
+    border-radius: 2px 8px; /* Forme de feuille */
+    opacity: 0.8;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    animation: fly-leaf linear infinite;
+    top: 50%; left: -10px; /* Départ hors écran */
+}
+
+@keyframes fly-leaf {
+    0% {
+        transform: translate(0, 0) rotate(0deg);
+        left: -10px;
+    }
+    100% {
+        /* Traverse l'écran horizontalement avec variation verticale */
+        transform: translate(110vw, var(--targetY)) rotate(720deg);
+        left: -10px; /* Reste relative au départ pour le calcul */
+    }
+}
 
 /* =========================================
-   14. STYLE PLANTNET
+   8. REPLAY, PLANTNET, BÉGOLEDEX, CLUSTERS
    ========================================= */
+#replay-controls { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2000; animation: popIn 0.5s; }
+#btn-replay-stop { background-color: #c0392b; color: white; border: none; padding: 10px 25px; border-radius: 30px; font-weight: 800; font-size: 14px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 10px; animation: pulseRed 2s infinite; }
+.hiker-icon-marker { background: none; border: none; font-size: 30px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); transition: all 0.1s linear; z-index: 1000 !important; }
+
 .plant-result-card { background: white; border: 1px solid #eee; border-radius: 10px; padding: 10px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; gap: 10px; align-items: center; }
 .plant-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; }
 .plant-info { flex: 1; }
@@ -391,361 +366,133 @@ input:checked + .slider:before { transform: translateX(21px); }
 .plant-sci { font-style: italic; color: #7f8c8d; font-size: 11px; }
 .score-container { height: 4px; background: #eee; border-radius: 2px; margin-top: 5px; width: 100%; overflow: hidden; }
 .score-bar { height: 100%; background: #27ae60; }
-.btn-add-plant { background: #e67e22; color: white; border: none; border-radius: 20px; padding: 5px 10px; font-size: 10px; font-weight: bold; cursor: pointer; margin-top: 5px; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 
-/* =========================================
-   15. CLUSTERING
-   ========================================= */
+/* --- BÉGOLEDEX STYLES --- */
+.begoledex-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 15px;
+    background: var(--modal-bg);
+}
+
+.begoledex-card {
+    background: var(--card-bg);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 5px var(--shadow-color);
+    position: relative;
+    border: 1px solid var(--border-color);
+    transition: transform 0.2s;
+}
+.begoledex-card:active { transform: scale(0.97); }
+
+.begoledex-card img {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    display: block;
+}
+
+.begoledex-info {
+    padding: 8px;
+    text-align: center;
+}
+
+.begoledex-name {
+    font-weight: 800;
+    color: var(--text-main);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.begoledex-sci {
+    font-style: italic;
+    color: var(--text-sub);
+    font-size: 10px;
+    margin-bottom: 2px;
+}
+
+.begoledex-date {
+    font-size: 9px;
+    color: #aaa;
+    margin-top: 4px;
+}
+
+.btn-del-plant {
+    position: absolute;
+    top: 5px; right: 5px;
+    background: rgba(0,0,0,0.5);
+    color: white;
+    border: none;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(2px);
+}
+
 .marker-cluster-custom { background: transparent; border: none; }
 
-/* =========================================
-   16. STYLE BEGOLEDEX
-   ========================================= */
-.begoledex-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 10px; overflow-y: auto; flex: 1; }
-.species-card { background: white; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); overflow: hidden; position: relative; border: 1px solid #eee; text-align: center; padding-bottom: 5px; }
-.species-img-container { width: 100%; height: 100px; background-color: #ecf0f1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.species-img { width: 100%; height: 100%; object-fit: cover; }
-.species-emoji-placeholder { font-size: 40px; }
-.species-name { font-size: 12px; font-weight: bold; color: #2c3e50; margin: 5px 0 2px 0; padding: 0 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.species-count { font-size: 10px; color: #fff; background-color: #8e44ad; padding: 2px 6px; border-radius: 10px; display: inline-block; margin-bottom: 3px; }
+.track-card { background: #fff; border-radius: 8px; border: 1px solid #e0e0e0; padding: 10px; display: flex; flex-direction: column; align-items: center; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.track-icon { font-size: 35px; margin-bottom: 5px; background: #f5f5f5; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #ddd; }
+.track-name { font-weight: 800; color: #5d4037; font-size: 13px; margin-bottom: 4px; }
+.track-desc { font-size: 10px; color: #666; line-height: 1.3; }
+
+.hidden { display: none !important; }
 
 /* =========================================
-   17. RÉALITÉ AUGMENTÉE (AR) - FIX SÉCURISÉ
+   9. EFFETS PARTICULES (NUAGES, POLLEN, LUCIOLES)
    ========================================= */
-#ar-screen {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    z-index: 9999;
-    background: black;
-    display: none; /* INVISIBLE PAR DÉFAUT (Sécurité) */
-}
-
-/* Nouvelle classe pour activer l'AR */
-#ar-screen.ar-visible {
-    display: block !important;
-}
-
-#ar-video {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    object-fit: cover;
-    z-index: 1; /* Tout au fond */
-}
-
-#ar-points-container {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    overflow: hidden; pointer-events: none;
-    z-index: 2; /* Au-dessus de la vidéo */
-}
-
-.ar-marker {
-    position: absolute;
-    top: 50%; transform: translate(-50%, -50%);
-    background: rgba(255, 255, 255, 0.9);
-    padding: 8px 12px; border-radius: 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    text-align: center; font-size: 12px;
-    white-space: nowrap; border: 2px solid white;
-    transition: left 0.1s linear;
-}
-
-.ar-ui-top {
-    position: absolute; top: 10px; left: 0; width: 100%;
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 0 20px; box-sizing: border-box;
-    z-index: 10000; /* TRÈS IMPORTANT : Au-dessus de tout pour être cliquable */
-}
-
-.ar-ui-bottom {
-    position: absolute; bottom: 20px; width: 100%; text-align: center;
-    z-index: 10000;
-}
-
-/* =========================================
-   18. STYLE GUIDE DU PISTEUR
-   ========================================= */
-.track-card {
-    background: #fff;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-.track-icon {
-    font-size: 35px;
-    margin-bottom: 5px;
-    background: #f5f5f5;
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px solid #ddd;
-}
-
-.track-name {
-    font-weight: 800;
-    color: #5d4037; /* Marron terre */
-    font-size: 13px;
-    margin-bottom: 4px;
-}
-
-.track-desc {
-    font-size: 10px;
-    color: #666;
-    line-height: 1.3;
-}
-
-.track-size {
-    font-size: 9px;
-    color: #fff;
-    background-color: #8d6e63;
-    padding: 2px 6px;
-    border-radius: 4px;
-    margin-top: 5px;
-    font-weight: bold;
-}
-
-/* =========================================
-   UTILITAIRE (Pour cacher les éléments)
-   ========================================= */
-.hidden {
-    display: none !important;
-}
-
-/* =========================================
-   19. EFFET LUCIOLES (MODE PERMANENT)
-   ========================================= */
-.firefly {
-    position: absolute;
-    width: 4px;
-    height: 4px;
-    background-color: #ccff00; /* Vert Néon */
-    border-radius: 50%;
-    
-    /* Effet Néon Intense */
-    box-shadow: 
-        0 0 5px #ccff00,
-        0 0 10px #aaff00,
-        0 0 15px #ccff00;
-        
-    opacity: 0.3; /* Départ semi-transparent */
-    pointer-events: none;
-    z-index: 501;
-    
-    /* Animation infinie et douce (6s pour un aller) */
-    animation: firefly-float 6s ease-in-out infinite alternate;
-}
-
-@keyframes firefly-float {
-    0% {
-        opacity: 0.3;
-        transform: translate(0, 0) scale(0.8);
-    }
-    100% {
-        opacity: 1; /* Brille fort */
-        transform: translate(var(--moveX), var(--moveY)) scale(1.2);
-    }
-}
-
-/* =========================================
-   21. SÉLECTEUR D'AVATAR & ANIMATIONS
-   ========================================= */
-.avatar-selector {
-    display: flex; justify-content: space-around;
-    background: rgba(0,0,0,0.05); padding: 10px;
-    border-radius: 15px; margin-bottom: 10px;
-}
-.avatar-option {
-    font-size: 28px; padding: 5px; border-radius: 50%;
-    cursor: pointer; transition: all 0.2s;
-    border: 2px solid transparent; opacity: 0.6; grayscale: 100%;
-}
-.avatar-option.selected {
-    background: white; border-color: #2ecc71;
-    transform: scale(1.2); opacity: 1; grayscale: 0;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-}
-
-/* LE MARQUEUR SUR LA CARTE */
-.user-avatar-marker {
-    font-size: 35px;
-    text-align: center;
-    line-height: 40px;
-    filter: drop-shadow(0 4px 4px rgba(0,0,0,0.4));
-    transition: transform 0.3s; /* Pour le retournement gauche/droite fluide */
-}
-
-/* ANIMATION 1 : MARCHE (Rebond) */
-.anim-walk { animation: walk-bob 0.6s infinite alternate ease-in-out; }
-@keyframes walk-bob {
-    from { transform: translateY(0); }
-    to { transform: translateY(-8px); }
-}
-
-/* ANIMATION 2 : VOL (Buse) */
-.anim-fly { animation: fly-float 2s infinite ease-in-out; }
-@keyframes fly-float {
-    0% { transform: translateY(0) rotate(-5deg) scale(1.1); }
-    50% { transform: translateY(-15px) rotate(5deg) scale(1.2); }
-    100% { transform: translateY(0) rotate(-5deg) scale(1.1); }
-}
-
-/* =========================================
-   23. EFFET NUAGES FLOTTANTS
-   ========================================= */
-#cloud-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 450; /* Derrière la pluie (500) mais devant la carte */
-    display: none; opacity: 0; transition: opacity 2s ease;
-}
+#firefly-overlay, #pollen-overlay, #cloud-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; transition: opacity 3s ease; }
+#firefly-overlay { z-index: 501; opacity: 0; }
+#pollen-overlay { z-index: 460; opacity: 1; }
+#cloud-overlay { z-index: 450; opacity: 0; display: none; }
 #cloud-overlay.active { display: block; opacity: 1; }
 
-.cloud {
-    position: absolute;
-    background: radial-gradient(closest-side, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0) 100%);
-    border-radius: 50%;
-    filter: blur(20px); /* L'effet "coton" */
-    opacity: 0.6;
-    animation: drift linear infinite;
+.firefly {
+    position: absolute; width: 4px; height: 4px; background-color: #ccff00; border-radius: 50%;
+    box-shadow: 0 0 5px #ccff00, 0 0 10px #aaff00; opacity: 0.3; pointer-events: none; z-index: 501;
+    animation: firefly-float 6s ease-in-out infinite alternate;
 }
-
-/* Animation de dérive lente */
-@keyframes drift {
-    from { transform: translateX(-150vw); }
-    to { transform: translateX(150vw); }
-}
-
-/* =========================================
-   24. MODE NUIT PROFONDE (VISION NOCTURNE)
-   ========================================= */
-/* L'application du filtre sur le fond de carte (Tuiles) */
-body.deep-night-active .leaflet-tile-pane {
-    /* grayscale(0.9) : Presque noir et blanc
-       brightness(0.4) : Très sombre
-       contrast(1.4) : Contraste forcé pour voir les chemins
-       sepia(0.4) + hue-rotate : Donne la teinte bleu-vert nuit (Effet Purkinje)
-    */
-    filter: grayscale(0.9) brightness(0.4) contrast(1.4) sepia(0.4) hue-rotate(170deg);
-    transition: filter 1.5s ease-in-out;
-}
-
-/* On assombrit aussi les marqueurs et les clusters pour ne pas éblouir */
-body.deep-night-active .leaflet-marker-pane,
-body.deep-night-active .leaflet-shadow-pane {
-    filter: brightness(0.7) saturate(0.7);
-    transition: filter 1.5s ease-in-out;
-}
-
-/* Adaptation des popups en mode nuit profonde */
-body.deep-night-active .leaflet-popup-content-wrapper,
-body.deep-night-active .leaflet-popup-tip {
-    background: #1a252f !important;
-    color: #bdc3c7 !important;
-    border: 1px solid #34495e;
-}
-
-/* =========================================
-   25. EFFET POLLEN (JOURNÉE)
-   ========================================= */
-#pollen-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 460; /* Juste devant les nuages */
-}
+@keyframes firefly-float { 0% { opacity: 0.3; transform: translate(0, 0) scale(0.8); } 100% { opacity: 1; transform: translate(var(--moveX), var(--moveY)) scale(1.2); } }
 
 .pollen {
-    position: absolute;
-    width: 3px; height: 3px;
-    background: rgba(255, 215, 0, 0.6); /* Or transparent */
-    border-radius: 50%;
-    filter: blur(0.5px); /* Légèrement flou */
-    box-shadow: 0 0 2px rgba(255, 255, 255, 0.4);
-    animation: pollen-float linear infinite;
+    position: absolute; width: 3px; height: 3px; background: rgba(255, 215, 0, 0.6); border-radius: 50%; filter: blur(0.5px);
+    box-shadow: 0 0 2px rgba(255, 255, 255, 0.4); animation: pollen-float linear infinite;
 }
+@keyframes pollen-float { 0% { opacity: 0; transform: translateY(0) translateX(0) scale(0.5); } 20% { opacity: 0.8; } 80% { opacity: 0.6; } 100% { opacity: 0; transform: translateY(-50px) translateX(var(--drift)) scale(1); } }
 
-@keyframes pollen-float {
-    0% {
-        opacity: 0;
-        transform: translateY(0) translateX(0) scale(0.5);
-    }
-    20% {
-        opacity: 0.8;
-    }
-    80% {
-        opacity: 0.6;
-    }
-    100% {
-        opacity: 0;
-        /* Monte doucement et dérive */
-        transform: translateY(-50px) translateX(var(--drift)) scale(1);
-    }
+.cloud {
+    position: absolute; background: radial-gradient(closest-side, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0) 100%);
+    border-radius: 50%; filter: blur(20px); opacity: 0.6; animation: drift linear infinite;
 }
+@keyframes drift { from { transform: translateX(-150vw); } to { transform: translateX(150vw); } }
 
-/* =========================================
-   26. TROPHÉE DU JOUR
-   ========================================= */
-.trophy-anim {
-    width: 100%;
-    height: 100%;
-    font-size: 30px; /* Un peu plus petit pour bien tenir dans la case */
-    display: flex; 
-    justify-content: center; 
-    align-items: center;
-    filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8));
-    animation: trophy-bounce 2s infinite ease-in-out;
-    cursor: pointer;
-}
+/* GESTION NUIT / PARTICULES */
+body.theme-dark #firefly-overlay { opacity: 1; }
+body.theme-dark #pollen-overlay { opacity: 0; }
 
-@keyframes trophy-bounce {
-    0%, 100% { transform: translateY(0) scale(1); }
-    50% { transform: translateY(-8px) scale(1.1); filter: drop-shadow(0 0 15px gold); }
-}
+/* VISION NOCTURNE */
+body.deep-night-active .leaflet-tile-pane { filter: grayscale(0.9) brightness(0.4) contrast(1.4) sepia(0.4) hue-rotate(170deg); transition: filter 1.5s ease-in-out; }
+body.deep-night-active .leaflet-marker-pane, body.deep-night-active .leaflet-shadow-pane { filter: brightness(0.7) saturate(0.7); transition: filter 1.5s ease-in-out; }
+body.deep-night-active .leaflet-popup-content-wrapper, body.deep-night-active .leaflet-popup-tip { background: #1a252f !important; color: #bdc3c7 !important; border: 1px solid #34495e; }
 
-/* ... Section existante ... */
+/* AVATAR */
+.avatar-selector { display: flex; justify-content: space-around; background: rgba(0,0,0,0.05); padding: 10px; border-radius: 15px; margin-bottom: 10px; }
+.avatar-option { font-size: 28px; padding: 5px; border-radius: 50%; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; opacity: 0.6; grayscale: 100%; }
+.avatar-option.selected { background: white; border-color: #2ecc71; transform: scale(1.2); opacity: 1; grayscale: 0; box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+.user-avatar-marker { font-size: 35px; text-align: center; line-height: 40px; filter: drop-shadow(0 4px 4px rgba(0,0,0,0.4)); transition: transform 0.3s; }
+.anim-walk { animation: walk-bob 0.6s infinite alternate ease-in-out; }
+@keyframes walk-bob { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+.anim-fly { animation: fly-float 2s infinite ease-in-out; }
+@keyframes fly-float { 0% { transform: translateY(0) rotate(-5deg) scale(1.1); } 50% { transform: translateY(-15px) rotate(5deg) scale(1.2); } 100% { transform: translateY(0) rotate(-5deg) scale(1.1); } }
 
-/* =========================================
-   13. REPLAY RANDO
-   ========================================= */
-#replay-controls { 
-    position: absolute; 
-    top: 90px; /* Un peu plus bas pour ne pas gêner */
-    left: 50%; 
-    transform: translateX(-50%); 
-    z-index: 2000; 
-    animation: popIn 0.5s; 
-}
-
-#btn-replay-stop {
-    background-color: #c0392b; 
-    color: white; 
-    border: none; 
-    padding: 10px 25px; 
-    border-radius: 30px; 
-    font-weight: 800; 
-    font-size: 14px; 
-    cursor: pointer;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-    display: flex; 
-    align-items: center; 
-    gap: 10px;
-    animation: pulseRed 2s infinite; /* Clignotement pour rappeler qu'un truc tourne */
-}
-
-#btn-replay-stop:hover {
-    transform: scale(1.05);
-    background-color: #e74c3c;
-}
-
-.hiker-icon-marker { 
-    background: none; 
-    border: none; 
-    font-size: 30px; 
-    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); 
-    transition: all 0.1s linear; 
-    z-index: 1000 !important; 
-}
+/* TROPHÉE */
+.trophy-anim { width: 100%; height: 100%; font-size: 30px; display: flex; justify-content: center; align-items: center; filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8)); animation: trophy-bounce 2s infinite ease-in-out; cursor: pointer; }
+@keyframes trophy-bounce { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-8px) scale(1.1); filter: drop-shadow(0 0 15px gold); } }

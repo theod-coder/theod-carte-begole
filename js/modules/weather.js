@@ -1,13 +1,14 @@
 import { VILLAGE_COORDS } from '../config.js';
 import { appState, updateEnv } from '../state.js';
 import { updateAudioWeather } from '../audio.js';
+import { triggerWeatherEffect, updateWindVisuals } from '../ui.js';
 import { pad } from '../utils.js';
 
-// --- LOGIQUE ASTRO (LUNE / SOLEIL) ---
+// --- LOGIQUE ASTRO (LUNE & SOLEIL) ---
 export function updateAstroWidget() {
     const date = new Date();
     
-    // 1. Calcul Phase de Lune (Algorithme simple)
+    // Calcul Phase de Lune
     let year = date.getFullYear(), month = date.getMonth(), day = date.getDate();
     let m = month, y = year;
     if (m < 3) { y--; m += 12; }
@@ -25,48 +26,45 @@ export function updateAstroWidget() {
     const moonEl = document.getElementById('astro-moon');
     if (moonEl) moonEl.innerText = moonString;
 
-    // 2. Calcul Coucher de Soleil
-    const start = new Date(date.getFullYear(), 0, 0);
-    const diff = date - start;
-    const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    // Approximation sinus pour l'heure du coucher
-    let sunsetHour = 19.5 + (Math.sin((dayOfYear - 80) * 0.0172) * 2.3);
-    const currentHour = date.getHours() + date.getMinutes() / 60;
-    let remaining = sunsetHour - currentHour;
+    // Mise à jour Soleil
+    if (appState.currentEnv.sunrise && appState.currentEnv.sunset) {
+        updateSunUI();
+    }
+}
 
+function updateSunUI() {
+    const now = new Date();
+    const sunrise = new Date(appState.currentEnv.sunrise);
+    const sunset = new Date(appState.currentEnv.sunset);
     const sunEl = document.getElementById('astro-sun');
-    if (sunEl) {
-        if (remaining < 0) {
-            sunEl.innerText = "🌑 Nuit";
-            sunEl.classList.remove('sun-alert');
-            document.body.classList.add('theme-dark');
-            toggleDeepNightUI(true); // Active mode nuit profonde auto
-        } else {
-            const h = Math.floor(remaining);
-            const min = Math.floor((remaining - h) * 60);
-            sunEl.innerText = `☀️ Reste ${h}h${pad(min)}`;
-            sunEl.classList.toggle('sun-alert', remaining < 1);
-            
-            // Golden Hour
-            if (remaining < 1) document.body.classList.add('theme-golden');
-            else document.body.classList.remove('theme-golden', 'theme-dark');
-            
-            toggleDeepNightUI(false);
-        }
+    
+    if (!sunEl) return;
+
+    if (now < sunrise) {
+        const diff = (sunrise - now) / (1000 * 60 * 60);
+        sunEl.innerText = `🌅 Aube ds ${Math.max(0, Math.round(diff))}h`;
+        sunEl.classList.remove('sun-alert');
+    } else if (now < sunset) {
+        const diff = (sunset - now) / (1000 * 60 * 60);
+        const h = Math.floor(diff);
+        const m = Math.floor((diff - h) * 60);
+        sunEl.innerText = `☀️ Reste ${h}h${pad(m)}`;
+        sunEl.classList.toggle('sun-alert', diff < 1);
+    } else {
+        sunEl.innerText = "🌑 Nuit";
+        sunEl.classList.remove('sun-alert');
     }
 }
 
 // --- LOGIQUE API MÉTÉO ---
 export function updateWeatherWidget() {
-    // Utilise la position utilisateur si dispo, sinon le village
     let lat = VILLAGE_COORDS[0], lng = VILLAGE_COORDS[1];
     if (appState.userPosition) {
         lat = appState.userPosition.lat;
         lng = appState.userPosition.lng;
     }
 
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,precipitation,weather_code&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,precipitation,weather_code,wind_speed_10m,is_day&daily=sunrise,sunset&timezone=auto`;
 
     fetch(url)
         .then(r => r.ok ? r.json() : null)
@@ -75,8 +73,12 @@ export function updateWeatherWidget() {
             
             const temp = Math.round(data.current.temperature_2m);
             const code = data.current.weather_code;
-            
-            // Traduction code WMO
+            const wind = data.current.wind_speed_10m;
+            const isDay = data.current.is_day === 1;
+
+            const sunrise = data.daily.sunrise[0];
+            const sunset = data.daily.sunset[0];
+
             let desc = "Calme";
             if (code === 0) desc = "☀️ Soleil";
             else if (code <= 3) desc = "⛅ Nuageux";
@@ -85,25 +87,74 @@ export function updateWeatherWidget() {
             else if (code >= 71 && code <= 77) desc = "❄️ Neige";
             else if (code >= 95) desc = "⚡ Orage";
 
-            // Mise à jour UI
-            document.getElementById('weather-desc').innerText = desc;
-            document.getElementById('weather-temp').innerText = `🌡️ ${temp}°C`;
+            // --- MISE À JOUR ROBUSTE DE L'INTERFACE ---
+            // On reconstruit le HTML du widget pour être sûr que le vent s'affiche
+            const widget = document.getElementById('weather-widget-btn');
+            if (widget) {
+                // On force le style colonne ici aussi par sécurité
+                widget.style.flexDirection = 'column';
+                widget.style.justifyContent = 'center';
+                widget.style.padding = '5px';
 
-            // Mise à jour État & Audio
+                widget.innerHTML = `
+                    <div class="env-row" style="margin:0; width: 100%; justify-content: space-around; display:flex;">
+                        <div style="font-size:11px;">${desc}</div>
+                        <div style="font-size:12px;">🌡️ ${temp}°C</div>
+                    </div>
+                    <div style="font-size:10px; width: 100%; text-align:center; border-top:1px solid rgba(255,255,255,0.3); margin-top:3px; padding-top:2px;">
+                        💨 ${Math.round(wind)} km/h
+                    </div>
+                `;
+            }
+
+            // Mise à jour État Global
             updateEnv('temp', temp);
             updateEnv('weather', desc);
+            updateEnv('wind', wind);
+            updateEnv('isDay', isDay);
+            updateEnv('sunrise', sunrise);
+            updateEnv('sunset', sunset);
+
             updateAudioWeather(desc);
             
-            // Effets visuels (Nuages, Pluie) via Custom Event ou appel direct
-            triggerWeatherVisuals(desc, code);
+            // Thèmes & Effets
+            applyDynamicTheme(sunrise, sunset, isDay);
+            triggerWeatherEffect(desc);
+            updateWindVisuals(wind > 20);
+
+            // Mise à jour Astro (soleil) maintenant qu'on a les heures
+            updateAstroWidget();
         })
         .catch(console.error);
 }
 
-// Helpers internes pour les effets visuels (simplifiés ici)
+function applyDynamicTheme(sunriseIso, sunsetIso, isDayApi) {
+    const now = new Date();
+    const sunrise = new Date(sunriseIso);
+    const sunset = new Date(sunsetIso);
+    const transitionDuration = 45; 
+    
+    const minFromSunrise = (now - sunrise) / 60000;
+    const minToSunset = (sunset - now) / 60000;
+
+    document.body.classList.remove('theme-dawn', 'theme-golden', 'theme-dark');
+    
+    if (minFromSunrise > -30 && minFromSunrise < transitionDuration) {
+        document.body.classList.add('theme-dawn');
+        toggleDeepNightUI(false);
+    } else if (minToSunset > 0 && minToSunset < 60) {
+        document.body.classList.add('theme-golden');
+        toggleDeepNightUI(false);
+    } else if (!isDayApi || minToSunset <= 0) {
+        document.body.classList.add('theme-dark');
+        toggleDeepNightUI(true); 
+    } else {
+        toggleDeepNightUI(false);
+    }
+}
+
 function toggleDeepNightUI(autoActive) {
     const deepPref = localStorage.getItem('begole_deep_night_pref');
-    // Si l'utilisateur a forcé une préférence, on la respecte, sinon c'est auto
     const isActive = (deepPref !== null) ? (deepPref === 'true') : autoActive;
     
     const toggle = document.getElementById('deep-night-toggle');
@@ -111,18 +162,4 @@ function toggleDeepNightUI(autoActive) {
     
     if (isActive) document.body.classList.add('deep-night-active');
     else document.body.classList.remove('deep-night-active');
-}
-
-function triggerWeatherVisuals(desc, code) {
-    // Logique pluie/neige/nuages (Tu peux copier la fonction triggerWeatherEffect de ui.js ici)
-    // Pour simplifier, on déclenche un event que ui.js peut écouter, ou on importe une fonction de ui.js
-    // Ici, pour l'exemple, on suppose que tu déplaces aussi `triggerWeatherEffect` ici ou dans un `visuals.js`
-    
-    // Gestion Nuages auto
-    if ((code >= 1 && code <= 3) && localStorage.getItem('begole_clouds_pref') !== 'false') {
-        const cloudToggle = document.getElementById('clouds-toggle');
-        if(cloudToggle && !cloudToggle.checked) {
-            cloudToggle.click(); // Hack simple pour activer
-        }
-    }
 }
