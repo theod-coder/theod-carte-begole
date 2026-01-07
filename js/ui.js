@@ -10,12 +10,11 @@ import { toggleSoundscape, updateAudioWeather } from './audio.js';
 import { showAchievements } from './gamification.js';
 import { handlePlantUpload, resetPlantNetUI } from './plantnet.js';
 import { openPisteurModal } from './pisteur.js';
-// --- IMPORT NOUVEAU ---
 import { openBegoledexModal } from './begoledex.js';
 
 import { showToast, triggerHaptic, pad, compressImage, getSpeedColor } from './utils.js';
 import { VILLAGE_COORDS, SECRET_EMOJIS } from './config.js';
-import { appState, setPoints } from './state.js';
+import { appState, setPoints } from './state.js'; // appState nécessaire pour le vent
 import { updateWeatherWidget } from './modules/weather.js';
 
 // --- État UI (Variables locales) ---
@@ -54,6 +53,9 @@ export function initEventListeners(map) {
         updateUserMarker(e.detail.lat, e.detail.lng, e.detail.acc, e.detail.head);
     });
 
+    // --- NOUVEAU : Écouteur pour la mise à jour Météo (Vent) ---
+    document.addEventListener('weather-updated', updateWindVisuals);
+
     // --- Boutons Flottants & Menu ---
     document.getElementById('menu-toggle').addEventListener('click', toggleMenu);
     document.getElementById('btn-compass').addEventListener('click', toggleCompass);
@@ -84,7 +86,7 @@ export function initEventListeners(map) {
 
     document.getElementById('btn-sound').addEventListener('click', toggleSoundscape);
     
-    // --- NOUVEAU : Listener Bégoledex (Version Sécurisée) ---
+    // --- Listener Bégoledex ---
     const btnBegoledex = document.getElementById('btn-begoledex');
     if (btnBegoledex) {
         btnBegoledex.addEventListener('click', openBegoledexModal);
@@ -196,7 +198,7 @@ export function initEventListeners(map) {
 
 function openHistory() {
     const div = document.getElementById('tripList');
-    div.innerHTML = ""; // On vide proprement
+    div.innerHTML = ""; 
     const filterDist = document.getElementById('filter-trip-class').value;
 
     const cleanBtn = document.createElement('button');
@@ -246,7 +248,7 @@ function openHistory() {
         noteDiv.style.fontSize = "10px";
         noteDiv.style.color = "#666";
         noteDiv.style.fontStyle = "italic";
-        noteDiv.textContent = t.note || ""; // SÉCURISÉ ICI
+        noteDiv.textContent = t.note || ""; 
 
         clickArea.appendChild(dateSpan);
         clickArea.appendChild(infoSpan);
@@ -989,41 +991,40 @@ export function triggerWeatherEffect(desc) {
     }
 }
 
-// --- NOUVEAU : GESTION DES PARTICULES DE VENT (FEUILLES) ---
-export function updateWindVisuals(isActive) {
-    const container = document.getElementById('weather-overlay');
+// --- GESTION VENT (POLLEN ROTATIF) - REMPLACE L'ANCIEN EFFET "LEAVES" ---
+export function updateWindVisuals() {
+    const container = document.getElementById('pollen-overlay');
+    if (!container) return;
     
-    // Si on active le vent, on ajoute des feuilles sans supprimer la pluie existante
-    if (isActive) {
-        // On vérifie s'il y a déjà des feuilles pour ne pas spammer
-        if (container.querySelector('.leaf')) return;
-
-        for (let i = 0; i < 15; i++) {
-            const l = document.createElement('div');
-            l.className = 'leaf';
-            
-            // Randomisation du départ (hauteur et délai)
-            l.style.top = (Math.random() * 80 + 10) + 'vh';
-            l.style.animationDuration = (2 + Math.random() * 3) + 's'; // Vitesse rapide
-            l.style.animationDelay = Math.random() * 5 + 's';
-            
-            // Trajectoire légèrement courbe via CSS var
-            l.style.setProperty('--targetY', (Math.random() * 20 - 10) + 'vh');
-            
-            container.appendChild(l);
-        }
-        document.body.classList.add('weather-active');
-        // On ne retire pas la classe weather-active car elle sert au conteneur global
+    // 1. Désactivé la nuit
+    const isNight = document.body.classList.contains('theme-dark');
+    if (isNight) {
+        container.style.opacity = '0';
+        return;
     } else {
-        // Si le vent tombe, on retire seulement les feuilles
-        const leaves = container.querySelectorAll('.leaf');
-        leaves.forEach(l => l.remove());
-        
-        // Si plus rien (ni pluie ni feuille), on cache le calque
-        if (container.children.length === 0) {
-            document.body.classList.remove('weather-active');
-        }
+        container.style.opacity = '1';
     }
+
+    // 2. Initialisation si vide
+    if (container.children.length === 0) {
+        initAmbientEffects(); 
+    }
+
+    // 3. Application du Vent
+    const windDir = (appState.currentEnv && appState.currentEnv.windDir) ? appState.currentEnv.windDir : 0;
+    const windSpeed = (appState.currentEnv && appState.currentEnv.windSpeed) ? appState.currentEnv.windSpeed : 5;
+
+    // Rotation : L'anim monte (0°), si vent du Nord (0°), il souffle vers le Sud (180°)
+    const rotation = windDir + 180;
+    container.style.transform = `rotate(${rotation}deg)`;
+
+    // Vitesse de l'animation
+    const particles = document.querySelectorAll('.pollen');
+    const duration = Math.max(2, 20 - (windSpeed / 2)) + 's';
+    
+    particles.forEach(p => {
+        p.style.animationDuration = duration;
+    });
 }
 
 function toggleDeepNight(e, forceState = null) {
@@ -1061,45 +1062,40 @@ function toggleMenuIfMobile() {
 
 /**
  * Génère les particules d'ambiance (Lucioles & Pollen)
- * Utilise les variables CSS définies dans style.css
  */
 function initAmbientEffects() {
-    // 1. Génération des Lucioles (Fireflies)
+    // 1. Lucioles (Fireflies)
     const fireflyContainer = document.getElementById('firefly-overlay');
     if (fireflyContainer && fireflyContainer.children.length === 0) {
         for (let i = 0; i < 20; i++) {
             const f = document.createElement('div');
             f.className = 'firefly';
-            
             f.style.left = Math.random() * 100 + 'vw';
             f.style.top = Math.random() * 100 + 'vh';
-            
             f.style.animationDelay = Math.random() * 5 + 's';
-            
             f.style.setProperty('--moveX', (Math.random() * 200 - 100) + 'px');
             f.style.setProperty('--moveY', (Math.random() * 200 - 100) + 'px');
-            
             fireflyContainer.appendChild(f);
         }
     }
 
-    // 2. Génération du Pollen
+    // 2. Pollen (Version GÉANTE pour rotation)
     const pollenContainer = document.getElementById('pollen-overlay');
-    if (pollenContainer && pollenContainer.children.length === 0) {
-        for (let i = 0; i < 30; i++) {
-            const p = document.createElement('div'); // On crée 'p'
+    if (pollenContainer) {
+        pollenContainer.innerHTML = ''; // Reset
+        for (let i = 0; i < 40; i++) {
+            const p = document.createElement('div');
             p.className = 'pollen';
             
-            // CORRECTION ICI : On utilise 'p' et non 'f'
-            p.style.left = Math.random() * 100 + 'vw';
-            p.style.top = Math.random() * 100 + 'vh';
-            
+            // Random dans le conteneur 200%
+            p.style.left = Math.random() * 100 + '%';
+            p.style.top = Math.random() * 100 + '%';
             p.style.animationDelay = Math.random() * 10 + 's';
-            p.style.animationDuration = (10 + Math.random() * 20) + 's';
-            
-            p.style.setProperty('--drift', (Math.random() * 150 - 75) + 'px');
+            p.style.setProperty('--drift', (Math.random() * 100 - 50) + 'px');
             
             pollenContainer.appendChild(p);
         }
+        // Mise à jour immédiate
+        setTimeout(updateWindVisuals, 500);
     }
 }

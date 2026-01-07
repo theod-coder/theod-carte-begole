@@ -330,7 +330,7 @@ input:checked + .slider:before { transform: translateX(21px); }
 .snow { background: white; border-radius: 50%; position: absolute; top: -10px; opacity: 0.8; animation: fall-snow linear infinite; }
 @keyframes fall-snow { 0% { transform: translateY(-10vh) translateX(0); } 100% { transform: translateY(110vh) translateX(20px); } }
 
-/* --- NOUVEAU : EFFET VENT (FEUILLES) --- */
+/* EFFET VENT (FEUILLES) */
 .leaf {
     position: absolute;
     width: 8px; height: 8px;
@@ -442,9 +442,48 @@ input:checked + .slider:before { transform: translateX(21px); }
 /* =========================================
    9. EFFETS PARTICULES (NUAGES, POLLEN, LUCIOLES)
    ========================================= */
-#firefly-overlay, #pollen-overlay, #cloud-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; transition: opacity 3s ease; }
+/* Modification pour supporter la rotation du vent */
+#pollen-overlay { 
+    position: fixed; 
+    /* On le rend immense et centré pour pouvoir le tourner sans voir les bords */
+    top: -50%; 
+    left: -50%; 
+    width: 200%; 
+    height: 200%; 
+    pointer-events: none; 
+    z-index: 460; 
+    opacity: 1;
+    transition: transform 2s ease-out, opacity 1s ease; /* Transition fluide de la direction */
+}
+
+/* Le pollen ne change pas beaucoup, mais on adapte l'animation */
+.pollen {
+    position: absolute; 
+    width: 4px; /* Un peu plus visible */
+    height: 4px; 
+    background: rgba(255, 215, 0, 0.7); 
+    border-radius: 50%; 
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.5); 
+    animation: pollen-flow linear infinite;
+}
+
+/* Animation simplifiée : du bas vers le haut (le conteneur gérera la direction) */
+@keyframes pollen-flow { 
+    0% { 
+        opacity: 0; 
+        transform: translateY(100vh) translateX(0) scale(0.5); 
+    } 
+    10% { opacity: 0.8; } 
+    90% { opacity: 0.6; } 
+    100% { 
+        opacity: 0; 
+        /* On utilise --drift pour garder un côté aléatoire léger */
+        transform: translateY(-50vh) translateX(var(--drift)) scale(1); 
+    } 
+}
+
+#firefly-overlay, #cloud-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; transition: opacity 3s ease; }
 #firefly-overlay { z-index: 501; opacity: 0; }
-#pollen-overlay { z-index: 460; opacity: 1; }
 #cloud-overlay { z-index: 450; opacity: 0; display: none; }
 #cloud-overlay.active { display: block; opacity: 1; }
 
@@ -455,12 +494,6 @@ input:checked + .slider:before { transform: translateX(21px); }
 }
 @keyframes firefly-float { 0% { opacity: 0.3; transform: translate(0, 0) scale(0.8); } 100% { opacity: 1; transform: translate(var(--moveX), var(--moveY)) scale(1.2); } }
 
-.pollen {
-    position: absolute; width: 3px; height: 3px; background: rgba(255, 215, 0, 0.6); border-radius: 50%; filter: blur(0.5px);
-    box-shadow: 0 0 2px rgba(255, 255, 255, 0.4); animation: pollen-float linear infinite;
-}
-@keyframes pollen-float { 0% { opacity: 0; transform: translateY(0) translateX(0) scale(0.5); } 20% { opacity: 0.8; } 80% { opacity: 0.6; } 100% { opacity: 0; transform: translateY(-50px) translateX(var(--drift)) scale(1); } }
-
 .cloud {
     position: absolute; background: radial-gradient(closest-side, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0) 100%);
     border-radius: 50%; filter: blur(20px); opacity: 0.6; animation: drift linear infinite;
@@ -469,6 +502,7 @@ input:checked + .slider:before { transform: translateX(21px); }
 
 /* GESTION NUIT / PARTICULES */
 body.theme-dark #firefly-overlay { opacity: 1; }
+/* Le pollen est géré en JS pour disparaître la nuit, mais on assure en CSS */
 body.theme-dark #pollen-overlay { opacity: 0; }
 
 /* VISION NOCTURNE */
